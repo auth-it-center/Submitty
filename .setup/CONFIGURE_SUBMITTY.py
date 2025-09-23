@@ -201,7 +201,13 @@ defaults = {
     'ldap_options': {
         'url': '',
         'uid': '',
-        'bind_dn': ''
+        # 'bind_dn': ''
+        # fixme_ldap
+        'service_dn': '',
+        'service_pw': '',
+        'pwd_field': '',
+        'base_dn': '',
+        'filter': '',
     },
     'saml_options': {
         'name': '',
@@ -253,7 +259,7 @@ print()
 if args.worker:
     SUPERVISOR_USER = get_input('What is the id for your submitty user?', defaults['supervisor_user'])
     print('SUPERVISOR USER : {}'.format(SUPERVISOR_USER))
-else:
+else: # getinput
     DATABASE_HOST = get_input('What is the database host?', defaults['database_host'])
     print()
 
@@ -334,20 +340,30 @@ else:
     AUTHENTICATION_METHOD = authentication_methods[auth]
 
     default_auth_options = defaults.get('ldap_options', dict())
-    LDAP_OPTIONS = {
+    LDAP_OPTIONS = { #fixme #getinput
         'url': default_auth_options.get('url', ''),
-        'uid': default_auth_options.get('uid', ''),
-        'bind_dn': default_auth_options.get('bind_dn', '')
+        # 'uid': default_auth_options.get('uid', ''),
+        # 'bind_dn': default_auth_options.get('bind_dn', '')
+        'service_dn': default_auth_options.get('service_dn', ''),
+        'service_pw': default_auth_options.get('service_pw', ''),
+        'pwd_field': default_auth_options.get('pwd_field', ''),
+        'base_dn': default_auth_options.get('base_dn', ''),
+        'filter': default_auth_options.get('filter', ''),
     }
     USER_CREATE_ACCOUNT = False
     if AUTHENTICATION_METHOD == 'DatabaseAuthentication':
         user_create_account = get_input("Allow users to create their own accounts? [y/n]", 'n')
         USER_CREATE_ACCOUNT = user_create_account.lower() in ['yes', 'y']
         print()
-    if AUTHENTICATION_METHOD == 'LdapAuthentication':
+    if AUTHENTICATION_METHOD == 'LdapAuthentication': #getinput
         LDAP_OPTIONS['url'] = get_input('Enter LDAP url?', LDAP_OPTIONS['url'])
-        LDAP_OPTIONS['uid'] = get_input('Enter LDAP UID?', LDAP_OPTIONS['uid'])
-        LDAP_OPTIONS['bind_dn'] = get_input('Enter LDAP bind_dn?', LDAP_OPTIONS['bind_dn'])
+        # LDAP_OPTIONS['uid'] = get_input('Enter LDAP UID?', LDAP_OPTIONS['uid'])
+        # LDAP_OPTIONS['bind_dn'] = get_input('Enter LDAP bind_dn?', LDAP_OPTIONS['bind_dn'])
+        LDAP_OPTIONS['service_dn'] = get_input('Enter LDAP service_dn?', LDAP_OPTIONS['service_dn'])
+        LDAP_OPTIONS['service_pw'] = get_input('Enter LDAP service_pw?', LDAP_OPTIONS['service_pw'])
+        LDAP_OPTIONS['pwd_field'] = get_input('Enter LDAP pwd_field?', LDAP_OPTIONS['pwd_field'])
+        LDAP_OPTIONS['base_dn'] = get_input('Enter LDAP base_dn?', LDAP_OPTIONS['base_dn'])
+        LDAP_OPTIONS['filter'] = get_input('Enter LDAP filter?', LDAP_OPTIONS['filter'])
 
     default_auth_options = defaults.get('saml_options', dict())
     SAML_OPTIONS = {

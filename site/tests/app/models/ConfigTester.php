@@ -684,9 +684,14 @@ class ConfigTester extends \PHPUnit\Framework\TestCase {
         $extra = [
             'authentication_method' => 'LdapAuthentication',
             'ldap_options' => [
+                # 'uid' => 'uid',
+                # 'bind_dn' => 'ou=users',
                 'url' => 'ldap://localhost',
-                'uid' => 'uid',
-                'bind_dn' => 'ou=users',
+                'service_dn',
+                'service_pw',
+                'pwd_field',
+                'base_dn',
+                'filter',
             ],
         ];
 

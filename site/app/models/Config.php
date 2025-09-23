@@ -419,9 +419,11 @@ class Config extends AbstractModel {
             throw new ConfigException("Could not find authentication config: {$this->config_path}/authentication.json");
         }
         $this->authentication = $authentication_json['authentication_method'];
+        // fixme_ldap
         $this->ldap_options = $authentication_json['ldap_options'];
         if ($this->authentication === 'LdapAuthentication') {
-            foreach (['url', 'uid', 'bind_dn'] as $key) {
+            foreach (['url', 'service_dn', 'service_pw', 'pwd_field', 'base_dn', 'filter'] as $key) {
+                # (['url', 'uid', 'bind_dn'] as $key) {
                 if (!isset($this->ldap_options[$key])) {
                     throw new ConfigException("Missing config value for ldap options: {$key}");
                 }
