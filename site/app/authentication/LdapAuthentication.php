@@ -30,12 +30,18 @@ class LdapAuthentication extends AbstractAuthentication {
             return false;
         }
 
+        if (@ldap_bind($ldap, $entries[0]['dn'], $this->password)) {
+            return true;
+        } else {
+            return false;
+        }
+
         // We grab the user Password Hash
-        $attr = strtolower($settings['pwd_field']);
-        $user_passwd_hash = $entries[0][$attr][0];
+        // $attr = strtolower($settings['pwd_field']);
+        // $user_passwd_hash = $entries[0][$attr][0];
 
         // And if it is the same as the user input we allow access
-        return crypt($this->password, $user_passwd_hash) === $user_passwd_hash;
+        // return crypt($this->password, $user_passwd_hash) === $user_passwd_hash;
 
         // fixme_ldap
         // this does not work for us
