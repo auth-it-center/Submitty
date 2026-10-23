@@ -452,7 +452,7 @@ class Config extends AbstractModel {
         $this->authentication = $authentication_json['authentication_method'];
         $this->ldap_options = $authentication_json['ldap_options'];
         if ($this->authentication === 'LdapAuthentication') {
-            foreach (['url', 'uid', 'bind_dn'] as $key) {
+            foreach (['url', 'service_dn', 'service_pw', 'pwd_field', 'base_dn', 'filter'] as $key) {
                 if (!isset($this->ldap_options[$key])) {
                     throw new ConfigException("Missing config value for ldap options: {$key}");
                 }

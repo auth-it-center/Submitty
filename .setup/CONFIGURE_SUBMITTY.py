@@ -202,8 +202,11 @@ defaults = {
     'sys_admin_url': '',
     'ldap_options': {
         'url': '',
-        'uid': '',
-        'bind_dn': ''
+        'service_dn': '',
+        'service_pw': '',
+        'pwd_field': '',
+        'base_dn': '',
+        'filter': ''
     },
     'saml_options': {
         'name': '',
@@ -338,8 +341,11 @@ else:
     default_auth_options = defaults.get('ldap_options', dict())
     LDAP_OPTIONS = {
         'url': default_auth_options.get('url', ''),
-        'uid': default_auth_options.get('uid', ''),
-        'bind_dn': default_auth_options.get('bind_dn', '')
+        'service_dn': default_auth_options.get('service_dn', ''),
+        'service_pw': default_auth_options.get('service_pw', ''),
+        'pwd_field': default_auth_options.get('pwd_field', ''),
+        'base_dn': default_auth_options.get('base_dn', ''),
+        'filter': default_auth_options.get('filter', '')
     }
     USER_CREATE_ACCOUNT = False
     if AUTHENTICATION_METHOD == 'DatabaseAuthentication':
@@ -348,8 +354,11 @@ else:
         print()
     if AUTHENTICATION_METHOD == 'LdapAuthentication':
         LDAP_OPTIONS['url'] = get_input('Enter LDAP url?', LDAP_OPTIONS['url'])
-        LDAP_OPTIONS['uid'] = get_input('Enter LDAP UID?', LDAP_OPTIONS['uid'])
-        LDAP_OPTIONS['bind_dn'] = get_input('Enter LDAP bind_dn?', LDAP_OPTIONS['bind_dn'])
+        LDAP_OPTIONS['service_dn'] = get_input('Enter LDAP service account DN?', LDAP_OPTIONS['service_dn'])
+        LDAP_OPTIONS['service_pw'] = get_input('Enter LDAP service account password?', LDAP_OPTIONS['service_pw'])
+        LDAP_OPTIONS['pwd_field'] = get_input('Enter LDAP password attribute?', LDAP_OPTIONS['pwd_field'])
+        LDAP_OPTIONS['base_dn'] = get_input('Enter LDAP search base DN?', LDAP_OPTIONS['base_dn'])
+        LDAP_OPTIONS['filter'] = get_input('Enter LDAP search filter ({uid} is replaced by the user id)?', LDAP_OPTIONS['filter'])
 
     default_auth_options = defaults.get('saml_options', dict())
     SAML_OPTIONS = {

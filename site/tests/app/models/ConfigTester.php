@@ -694,7 +694,7 @@ class ConfigTester extends \PHPUnit\Framework\TestCase {
     }
 
     public static function ldapOptionsDataProvider() {
-        return [['url'], ['uid'], ['bind_dn']];
+        return [['url'], ['service_dn'], ['service_pw'], ['pwd_field'], ['base_dn'], ['filter']];
     }
 
     /**
@@ -705,8 +705,11 @@ class ConfigTester extends \PHPUnit\Framework\TestCase {
             'authentication_method' => 'LdapAuthentication',
             'ldap_options' => [
                 'url' => 'ldap://localhost',
-                'uid' => 'uid',
-                'bind_dn' => 'ou=users',
+                'service_dn' => 'uid=service,ou=users,dc=vagrant,dc=local',
+                'service_pw' => 'service_password',
+                'pwd_field' => 'userPassword',
+                'base_dn' => 'ou=users,dc=vagrant,dc=local',
+                'filter' => '(uid={uid})',
             ],
         ];
 
