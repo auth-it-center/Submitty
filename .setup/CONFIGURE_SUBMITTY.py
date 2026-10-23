@@ -56,6 +56,7 @@ class StrToBoolAction(argparse.Action):
 if os.getuid() != 0:
     raise SystemExit('ERROR: This script must be run by root or sudo')
 
+raise SystemExit('ERROR: This script deprecated and will be removed soon.')
 
 parser = argparse.ArgumentParser(description='Submitty configuration script',
                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -161,6 +162,7 @@ INSTALL_FILE = os.path.join(SETUP_INSTALL_DIR, 'INSTALL_SUBMITTY.sh')
 CONFIGURATION_JSON = os.path.join(SETUP_INSTALL_DIR, 'submitty_conf.json')
 SITE_CONFIG_DIR = os.path.join(SUBMITTY_INSTALL_DIR, "site", "config")
 CONFIG_INSTALL_DIR = os.path.join(SUBMITTY_INSTALL_DIR, 'config')
+CONFIG_DATA_DIR = os.path.join(SUBMITTY_DATA_DIR, 'config')
 SUBMITTY_ADMIN_JSON = os.path.join(CONFIG_INSTALL_DIR, 'submitty_admin.json')
 EMAIL_JSON = os.path.join(CONFIG_INSTALL_DIR, 'email.json')
 AUTHENTICATION_JSON = os.path.join(CONFIG_INSTALL_DIR, 'authentication.json')
@@ -200,14 +202,11 @@ defaults = {
     'sys_admin_url': '',
     'ldap_options': {
         'url': '',
-        'uid': '',
-        # 'bind_dn': ''
-        # fixme_ldap
         'service_dn': '',
         'service_pw': '',
         'pwd_field': '',
         'base_dn': '',
-        'filter': '',
+        'filter': ''
     },
     'saml_options': {
         'name': '',
@@ -259,7 +258,7 @@ print()
 if args.worker:
     SUPERVISOR_USER = get_input('What is the id for your submitty user?', defaults['supervisor_user'])
     print('SUPERVISOR USER : {}'.format(SUPERVISOR_USER))
-else: # getinput
+else:
     DATABASE_HOST = get_input('What is the database host?', defaults['database_host'])
     print()
 
@@ -340,30 +339,26 @@ else: # getinput
     AUTHENTICATION_METHOD = authentication_methods[auth]
 
     default_auth_options = defaults.get('ldap_options', dict())
-    LDAP_OPTIONS = { #fixme #getinput
+    LDAP_OPTIONS = {
         'url': default_auth_options.get('url', ''),
-        # 'uid': default_auth_options.get('uid', ''),
-        # 'bind_dn': default_auth_options.get('bind_dn', '')
         'service_dn': default_auth_options.get('service_dn', ''),
         'service_pw': default_auth_options.get('service_pw', ''),
         'pwd_field': default_auth_options.get('pwd_field', ''),
         'base_dn': default_auth_options.get('base_dn', ''),
-        'filter': default_auth_options.get('filter', ''),
+        'filter': default_auth_options.get('filter', '')
     }
     USER_CREATE_ACCOUNT = False
     if AUTHENTICATION_METHOD == 'DatabaseAuthentication':
         user_create_account = get_input("Allow users to create their own accounts? [y/n]", 'n')
         USER_CREATE_ACCOUNT = user_create_account.lower() in ['yes', 'y']
         print()
-    if AUTHENTICATION_METHOD == 'LdapAuthentication': #getinput
+    if AUTHENTICATION_METHOD == 'LdapAuthentication':
         LDAP_OPTIONS['url'] = get_input('Enter LDAP url?', LDAP_OPTIONS['url'])
-        # LDAP_OPTIONS['uid'] = get_input('Enter LDAP UID?', LDAP_OPTIONS['uid'])
-        # LDAP_OPTIONS['bind_dn'] = get_input('Enter LDAP bind_dn?', LDAP_OPTIONS['bind_dn'])
-        LDAP_OPTIONS['service_dn'] = get_input('Enter LDAP service_dn?', LDAP_OPTIONS['service_dn'])
-        LDAP_OPTIONS['service_pw'] = get_input('Enter LDAP service_pw?', LDAP_OPTIONS['service_pw'])
-        LDAP_OPTIONS['pwd_field'] = get_input('Enter LDAP pwd_field?', LDAP_OPTIONS['pwd_field'])
-        LDAP_OPTIONS['base_dn'] = get_input('Enter LDAP base_dn?', LDAP_OPTIONS['base_dn'])
-        LDAP_OPTIONS['filter'] = get_input('Enter LDAP filter?', LDAP_OPTIONS['filter'])
+        LDAP_OPTIONS['service_dn'] = get_input('Enter LDAP service account DN?', LDAP_OPTIONS['service_dn'])
+        LDAP_OPTIONS['service_pw'] = get_input('Enter LDAP service account password?', LDAP_OPTIONS['service_pw'])
+        LDAP_OPTIONS['pwd_field'] = get_input('Enter LDAP password attribute?', LDAP_OPTIONS['pwd_field'])
+        LDAP_OPTIONS['base_dn'] = get_input('Enter LDAP search base DN?', LDAP_OPTIONS['base_dn'])
+        LDAP_OPTIONS['filter'] = get_input('Enter LDAP search filter ({uid} is replaced by the user id)?', LDAP_OPTIONS['filter'])
 
     default_auth_options = defaults.get('saml_options', dict())
     SAML_OPTIONS = {
@@ -503,8 +498,9 @@ DATABASE_JSON = os.path.join(CONFIG_INSTALL_DIR, 'database.json')
 SUBMITTY_JSON = os.path.join(CONFIG_INSTALL_DIR, 'submitty.json')
 SUBMITTY_USERS_JSON = os.path.join(CONFIG_INSTALL_DIR, 'submitty_users.json')
 WORKERS_JSON = os.path.join(CONFIG_INSTALL_DIR, 'autograding_workers.json')
-CONTAINERS_JSON = os.path.join(CONFIG_INSTALL_DIR, 'autograding_containers.json')
+CONTAINERS_JSON = os.path.join(CONFIG_DATA_DIR, 'autograding_containers.json')
 SECRETS_PHP_JSON = os.path.join(CONFIG_INSTALL_DIR, 'secrets_submitty_php.json')
+PRESERVE_LIST_JSON = os.path.join(CONFIG_INSTALL_DIR, 'preserve_file_list.json')
 
 # Rescue submitty config data
 submitty_config = OrderedDict()
@@ -513,6 +509,15 @@ try:
         submitty_config = json.load(json_file, object_pairs_hook=OrderedDict)
 except FileNotFoundError:
     pass
+
+# Rescue preserve list
+preserve_list = OrderedDict()
+try:
+    with open(PRESERVE_LIST_JSON, 'r') as json_file:
+        preserve_list = json.load(json_file, object_pairs_hook=OrderedDict)
+except FileNotFoundError:
+    pass
+print("preserve list", preserve_list)
 
 #Rescue the autograding_workers and _containers files if they exist.
 rescued = list()
@@ -539,6 +544,10 @@ elif os.path.exists(CONFIG_INSTALL_DIR):
 os.makedirs(CONFIG_INSTALL_DIR, exist_ok=True)
 shutil.chown(CONFIG_INSTALL_DIR, 'root', COURSE_BUILDERS_GROUP)
 os.chmod(CONFIG_INSTALL_DIR, 0o755)
+
+os.makedirs(CONFIG_DATA_DIR, exist_ok=True)
+shutil.chown(CONFIG_DATA_DIR, 'root', COURSE_BUILDERS_GROUP)
+os.chmod(CONFIG_DATA_DIR, 0o755)
 
 # Finish rescuing files.
 for full_file_name, tmp_file_name in rescued:
@@ -673,6 +682,15 @@ user_id_requirements = {
     ]
 }
 
+password_requirements = {
+    "min_length": 12,
+    "max_length": 72,
+    "require_uppercase": False,
+    "require_lowercase": False,
+    "require_numbers": False,
+    "require_special_chars": False
+}
+
 
 config = submitty_config
 config['submitty_install_dir'] = SUBMITTY_INSTALL_DIR
@@ -698,6 +716,7 @@ if not args.worker:
     config['course_material_file_upload_limit_mb'] = COURSE_MATERIAL_UPLOAD_LIMIT_MB
     config['user_create_account'] = USER_CREATE_ACCOUNT
     config['user_id_requirements'] = user_id_requirements
+    config['password_requirements'] = password_requirements
     
 config['worker'] = True if args.worker == 1 else False
 
@@ -777,6 +796,13 @@ if not args.worker:
         json.dump(config, json_file, indent=2)
     shutil.chown(EMAIL_JSON, 'root', DAEMONPHP_GROUP)
     os.chmod(EMAIL_JSON, 0o440)
+
+##############################################################################
+# preserve_list users json
+
+with open(PRESERVE_LIST_JSON, 'w') as json_file:
+    json.dump(preserve_list, json_file, indent=2)
+os.chmod(SUBMITTY_JSON, 0o444)
 
 ##############################################################################
 

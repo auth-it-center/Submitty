@@ -18,7 +18,9 @@ const DateTime = luxon.DateTime;
  * @returns {void} : loads the updated calendar
  */
 function changeView(view_type, view_year, view_month, view_day) {
-    Cookies.set('view', view_type);
+    const type = view_type.value;
+
+    Cookies.set('view', type);
 
     let cookie_year = parseInt(Cookies.get('calendar_year'));
     let cookie_month = parseInt(Cookies.get('calendar_month'));
@@ -33,7 +35,7 @@ function changeView(view_type, view_year, view_month, view_day) {
         cookie_day = view_day;
     }
     // Load the calendar to the correct day
-    loadCalendar(cookie_month, cookie_year, cookie_day, view_type);
+    loadCalendar(cookie_month, cookie_year, cookie_day, type);
 }
 
 /**
@@ -195,6 +197,7 @@ function lighten(colorstr) {
  * @returns {HTMLElement} the HTML Element for the calendar item
  */
 function generateCalendarItem(item) {
+    // eslint-disable-next-line no-useless-assignment
     let tooltip = '';
     if (!item['submission_open'] && item['is_student']) {
         // Student shouldn't be able to access this item
@@ -506,8 +509,16 @@ function buildSwitchingHeader(view_year, view_month, view_day, type) {
     const fragment = document.createDocumentFragment();
 
     // Build first header column
-    const th1 = document.createElement('th');
-    th1.colSpan = 3;
+    const th = document.createElement('th');
+    th.style.width = '100%';
+    th.colSpan = '7';
+
+    // Build the container for the header, which contains the month and year switching buttons and the month/year title
+    const container = document.createElement('div');
+    container.style.display = 'flex';
+    container.style.justifyContent = 'center';
+    container.style.alignItems = 'end';
+
     let div = document.createElement('div');
     div.classList.add('cal-switch');
     div.id = 'prev-month-switch';
@@ -528,11 +539,9 @@ function buildSwitchingHeader(view_year, view_month, view_day, type) {
 
     // Append to header
     div.appendChild(a);
-    th1.appendChild(div);
+    container.appendChild(div);
 
     // Build second header column
-    const th2 = document.createElement('th');
-    th2.colSpan = 1;
     div = document.createElement('div');
     div.classList.add('cal-title');
 
@@ -588,11 +597,9 @@ function buildSwitchingHeader(view_year, view_month, view_day, type) {
     });
     dropdownContainer.append(monthSelect).append(yearSelect);
     div.appendChild(dropdownContainer[0]);
-    th2.appendChild(div);
+    container.appendChild(div);
 
     // Build third header column
-    const th3 = document.createElement('th');
-    th3.colSpan = 3;
     div = document.createElement('div');
     div.classList.add('cal-switch');
     div.id = 'next-month-switch';
@@ -613,12 +620,13 @@ function buildSwitchingHeader(view_year, view_month, view_day, type) {
 
     // Append to header
     div.appendChild(a);
-    th3.appendChild(div);
+    container.appendChild(div);
 
-    // Append all elements to fragment
-    fragment.appendChild(th1);
-    fragment.appendChild(th2);
-    fragment.appendChild(th3);
+    // Append the entire header to the first column
+    th.appendChild(container);
+
+    // Append the column to the header row
+    fragment.appendChild(th);
 
     return fragment;
 }

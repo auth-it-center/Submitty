@@ -230,6 +230,17 @@
         </label>
         <textarea class="config-row" name="grade_inquiry_message" id="grade-inquiry-message" rows="4">{{ fields['grade_inquiry_message'] }}</textarea>
 
+        <div class="config-row checkbox-row">
+            <input type="checkbox" name="submission_clustering_enabled" id="submission-clustering-enabled" value="true" {{ fields['submission_clustering_enabled'] ? 'checked' : '' }} data-testid="submission-clustering-enabled"/>
+            <label for="submission-clustering-enabled">
+                <span class="option-title">Enable Submission Clustering</span>
+                <br>
+                <span class="option-alt">
+                    Allow instructors to use the Submission Clustering feature to group similar submissions for cluster-wide grading.
+                </span>
+            </label>
+        </div>
+
         {# TODO: Not sure what this is
             <label for="zero_rubric_grades">
                 <div class="option-title">Zero Rubric Grading</div>
@@ -376,7 +387,44 @@
                         <br/>
                     </div>
                 </div>
+                <hr>
+                <div class="config-row checkbox-row">
+                    <input 
+                        type="checkbox"
+                        name="course_archive"
+                        id="course-archive"
+                        data-testid="course-archive"
+                        class="no-autosave"
+                        value="true"
+                        {{ fields['course_status'] == 2 ? 'checked' : '' }}
+                        {{ (fields['course_status'] == 2 and fields['unarchivable']) ? 'disabled' : '' }}
+                        onclick="return confirmArchiveToggle(this)"
+                    />
+                    <div>
+                        <label for="course-archive">
+                            <span class="option-title">Archive This Course</span>
+                        </label>
+                        <br/>
+                        {% if fields['course_status'] == 1 %}
+                            <span class="option-alt">
+                                Archiving will change the course to be only visible to the instructor. 
+                                See <a href="https://submitty.org/sysadmin/configuration/course_archiving" target="_blank">documentation</a>.
+                            </span>
+                        {% else %}
+                            <span class="option-alt">
+                                <strong>Warning:</strong> Before unarchiving, ensure your disk/partition has sufficient space. 
+                                See <a href="https://submitty.org/sysadmin/configuration/course_archiving" target="_blank">documentation</a>.
+                            </span>
+                        {% endif %}
+                        {% if fields['course_status'] == 2 and fields['unarchivable'] %}
+                            <br/>
+                            <span style="color: red; font-weight: bold;">⚠ This course is locked from unarchiving by a system administrator</span>
+                        {% endif %}
+                    </div>
+                </div>
             </hr>
         </div>
     </div>
 </div>
+
+<script src="/js/admin-course-archive.js"></script>

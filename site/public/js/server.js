@@ -1,4 +1,4 @@
-/* exported changeDiffView addMarkdownCode renderMarkdown previewMarkdown getFocusableElements popOutSubmittedFile
+/* exported changeDiffView addMarkdownCode renderMarkdown previewMarkdown getFocusableElements openSubmittedFile
    openPopUp enableTabsInTextArea submitAJAX getFileExtension toggleSidebar updateSidebarPreference detectColorScheme
    setAllRelease deleteOverriddenGrades flagUserImage peerFeedbackUpload resizeNoScrollTextareas checkBulkProgress
    updateTheme openSetAllRelease setChildNewDateTime escapeSpecialChars loadOverriddenGrades updateGradeOverride
@@ -666,54 +666,73 @@ function copyToClipboard(code) {
 
 function downloadCSV(code) {
     const download_info = JSON.parse($('#download_info_json_id').val());
-    let csv_data = 'Given Name,Family Name,User ID,Email,Secondary Email,UTC Offset,Time Zone,Registration Section,Rotation Section,Group\n';
+
+    // define CSV column headers
+    const columns = [
+        { header: 'Given Name', key: 'given_name' },
+        { header: 'Family Name', key: 'family_name' },
+        { header: 'User ID', key: 'user_id' },
+        { header: 'Email', key: 'email' },
+        { header: 'Secondary Email', key: 'secondary_email' },
+        { header: 'UTC Offset', key: 'utc_offset' },
+        { header: 'Time Zone', key: 'time_zone' },
+        { header: 'Registration Section', key: 'reg_section', quote: true },
+        { header: 'Registration Subsection', key: 'reg_subsection', quote: true },
+        { header: 'Rotation Section', key: 'rot_section' },
+        { header: 'Group', key: 'group' },
+    ];
+
+    // Generate the CSV header row
+    let csv_data = `${columns.map((col) => col.header).join(',')}\n`;
     const required_user_id = [];
+
+    // formats a single user into a CSV row
+    const generateRow = (user) => {
+        return `${columns.map((col) => {
+            let val = user[col.key];
+
+            if (val === undefined || val === null) {
+                val = '';
+            }
+
+            if (col.quote || (typeof val === 'string' && val.includes(','))) {
+                return `"${val}"`;
+            }
+            return val;
+        }).join(',')}\n`;
+    };
+
+    // adds a user to the CSV string only if they haven't been added yet
+    const addUserToCSV = (user) => {
+        if ($.inArray(user.user_id, required_user_id) === -1) {
+            csv_data += generateRow(user);
+            required_user_id.push(user.user_id);
+        }
+    };
 
     $('#download-form input:checkbox').each(function () {
         if ($(this).is(':checked')) {
             const thisVal = $(this).val();
 
-            if (thisVal === 'instructor') {
-                for (let i = 0; i < download_info.length; ++i) {
-                    if ((download_info[i].group === 'Instructor') && ($.inArray(download_info[i].user_id, required_user_id) === -1)) {
-                        csv_data += `${[download_info[i].given_name, download_info[i].family_name, download_info[i].user_id, download_info[i].email, download_info[i].secondary_email, download_info[i].utc_offset, download_info[i].time_zone, `"${download_info[i].reg_section}"`, download_info[i].rot_section, download_info[i].group].join(',')}\n`;
-                        required_user_id.push(download_info[i].user_id);
-                    }
+            for (let i = 0; i < download_info.length; ++i) {
+                const user = download_info[i];
+
+                if (thisVal === 'instructor' && user.group === 'Instructor') {
+                    addUserToCSV(user);
                 }
-            }
-            else if (thisVal === 'full_access_grader') {
-                for (let i = 0; i < download_info.length; ++i) {
-                    if ((download_info[i].group === 'Full Access Grader (Grad TA)') && ($.inArray(download_info[i].user_id, required_user_id) === -1)) {
-                        csv_data += `${[download_info[i].given_name, download_info[i].family_name, download_info[i].user_id, download_info[i].email, download_info[i].secondary_email, download_info[i].utc_offset, download_info[i].time_zone, `"${download_info[i].reg_section}"`, download_info[i].rot_section, download_info[i].group].join(',')}\n`;
-                        required_user_id.push(download_info[i].user_id);
-                    }
+                else if (thisVal === 'full_access_grader' && user.group === 'Full Access Grader (Grad TA)') {
+                    addUserToCSV(user);
                 }
-            }
-            else if (thisVal === 'limited_access_grader') {
-                for (let i = 0; i < download_info.length; ++i) {
-                    if ((download_info[i].group === 'Limited Access Grader (Mentor)') && ($.inArray(download_info[i].user_id, required_user_id) === -1)) {
-                        csv_data += `${[download_info[i].given_name, download_info[i].family_name, download_info[i].user_id, download_info[i].email, download_info[i].secondary_email, download_info[i].utc_offset, download_info[i].time_zone, `"${download_info[i].reg_section}"`, download_info[i].rot_section, download_info[i].group].join(',')}\n`;
-                        required_user_id.push(download_info[i].user_id);
-                    }
+                else if (thisVal === 'limited_access_grader' && user.group === 'Limited Access Grader (Mentor)') {
+                    addUserToCSV(user);
                 }
-            }
-            else {
-                for (let i = 0; i < download_info.length; ++i) {
-                    if (code === 'user') {
-                        if ((download_info[i].reg_section === thisVal) && ($.inArray(download_info[i].user_id, required_user_id) === -1)) {
-                            csv_data += `${[download_info[i].given_name, download_info[i].family_name, download_info[i].user_id, download_info[i].email, download_info[i].secondary_email, download_info[i].utc_offset, download_info[i].time_zone, `"${download_info[i].reg_section}"`, download_info[i].rot_section, download_info[i].group].join(',')}\n`;
-                            required_user_id.push(download_info[i].user_id);
-                        }
+                else if (!['instructor', 'full_access_grader', 'limited_access_grader'].includes(thisVal)) {
+                    // Section/Grader filtering logic
+                    if (code === 'user' && user.reg_section === thisVal) {
+                        addUserToCSV(user);
                     }
-                    else if (code === 'grader') {
-                        if ((download_info[i].reg_section === 'All') && ($.inArray(download_info[i].user_id, required_user_id) === -1)) {
-                            csv_data += `${[download_info[i].given_name, download_info[i].family_name, download_info[i].user_id, download_info[i].email, download_info[i].secondary_email, download_info[i].utc_offset, download_info[i].time_zone, `"${download_info[i].reg_section}"`, download_info[i].rot_section, download_info[i].group].join(',')}\n`;
-                            required_user_id.push(download_info[i].user_id);
-                        }
-                        if (($.inArray(thisVal, download_info[i].reg_section.split(',')) !== -1) && ($.inArray(download_info[i].user_id, required_user_id) === -1)) {
-                            csv_data += `${[download_info[i].given_name, download_info[i].family_name, download_info[i].user_id, download_info[i].email, download_info[i].secondary_email, download_info[i].utc_offset, download_info[i].time_zone, `"${download_info[i].reg_section}"`, download_info[i].rot_section, download_info[i].group].join(',')}\n`;
-                            required_user_id.push(download_info[i].user_id);
-                        }
+                    else if (code === 'grader' && (user.reg_section === 'All' || $.inArray(thisVal, user.reg_section.split(',')) !== -1)) {
+                        addUserToCSV(user);
                     }
                 }
             }
@@ -827,6 +846,27 @@ function toggleDiv(id) {
     return true;
 }
 
+function toggleSubmittedFiles() {
+    const toggleText = document.getElementById('submission-files-toggle-text');
+    const toggleIcon = document.getElementById('submission-files-toggle-icon');
+    const submissionDetails = document.getElementById('submission-details');
+
+    toggleDiv('submitted-files');
+
+    if ($('#submitted-files').is(':hidden')) {
+        toggleText.textContent = 'Show All Files';
+        toggleIcon.className = 'fas fa-chevron-down';
+        submissionDetails.classList.remove('col-md-6');
+        submissionDetails.classList.add('col-md-12');
+    }
+    else {
+        toggleText.textContent = 'Hide All Files';
+        toggleIcon.className = 'fas fa-chevron-up';
+        submissionDetails.classList.remove('col-md-12');
+        submissionDetails.classList.add('col-md-6');
+    }
+}
+
 function checkRefreshPage(url, anon_id = '') {
     setTimeout(() => {
         check_server(url, anon_id);
@@ -870,7 +910,7 @@ function downloadTestCaseResult(testcase, name, version, gradeable, user) {
 }
 
 function downloadStudentAnnotations(url) {
-    window.open(url, '_blank', 'toolbar=no, scrollbars=yes, resizable=yes, width=700, height=600');
+    window.open(url, '_blank');
 }
 
 function downloadSubmissionZip(grade_id, submitter_id, version, origin = null, is_anon = false) {
@@ -1019,22 +1059,26 @@ function toggleCMFolders(open) {
 }
 
 function openUrl(url) {
-    window.open(url, '_blank', 'toolbar=no, scrollbars=yes, resizable=yes, width=700, height=600');
+    window.open(url, '_blank');
     return false;
 }
 
 function changeName(element, user, visible_username, anon) {
-    const new_element = element.getElementsByTagName('strong')[0];
+    const new_element = element.getElementsByClassName('author-name')[0];
+    if (!new_element) {
+        return;
+    }
+
     // eslint-disable-next-line eqeqeq
     anon = anon == 'true';
     icon = element.getElementsByClassName('fas fa-eye')[0];
     if (icon === undefined) {
         icon = element.getElementsByClassName('fas fa-eye-slash')[0];
         if (anon) {
-            new_element.style.color = 'black';
+            new_element.style.removeProperty('color');
             new_element.style.fontStyle = 'normal';
         }
-        new_element.textContent = visible_username;
+        new_element.childNodes[0].nodeValue = visible_username;
         icon.className = 'fas fa-eye';
         icon.title = 'Show full user information';
     }
@@ -1103,6 +1147,7 @@ function resizeFrame(id, max_height = 500, force_height = -1) {
     let img = undefined;
     const visible = $(`iframe#${id}`).is(':visible');
     img = $(`iframe#${id}`).contents().find('img');
+    // eslint-disable-next-line no-useless-assignment
     let height = 0;
     if ($(`iframe#${id}`).contents().find('html').length !== 0) {
         $(`iframe#${id}`).contents().find('html').css('height', 'inherit');
@@ -1153,25 +1198,6 @@ function resizeFrame(id, max_height = 500, force_height = -1) {
         });
         observer.observe($(`iframe#${id}`)[0]);
     }
-}
-
-/**
- * TODO: This may be unused.  Check, and potentially remove this function.
- */
-function batchImportJSON(url, csrf_token) {
-    $.ajax(url, {
-        type: 'POST',
-        data: {
-            csrf_token: csrf_token,
-        },
-    })
-        .done((response) => {
-            window.alert(response);
-            location.reload(true);
-        })
-        .fail(() => {
-            window.alert('[AJAX ERROR] Refresh page');
-        });
 }
 
 function submitAJAX(url, data, callbackSuccess, callbackFailure) {
@@ -1244,27 +1270,27 @@ function enableTabsInTextArea(jQuerySelector) {
         $(this).outerHeight(38).outerHeight(this.scrollHeight);
     });
     t.trigger('input');
-    t.keydown(function (event) {
-        if (event.which === 27) { // ESC was pressed, proceed to next control element.
-            // Next control element may not be a sibling, so .next().focus() is not guaranteed
-            // to work.  There is also no guarantee that controls are properly wrapped within
-            // a <form>.  Therefore, retrieve a master list of all visible controls and switch
-            // focus to the next control in the list.
-            const controls = $(':tabbable').filter(':visible');
-            controls.eq(controls.index(this) + 1).focus();
-            return false;
-        }
-        else if (!event.shiftKey && event.code === 'Tab') { // TAB was pressed without SHIFT, text indent
-            const text = this.value;
-            const beforeCurse = this.selectionStart;
-            const afterCurse = this.selectionEnd;
-            this.value = `${text.substring(0, beforeCurse)}\t${text.substring(afterCurse)}`;
-            this.selectionStart = this.selectionEnd = beforeCurse + 1;
-            return false;
-        }
-        // No need to test for SHIFT+TAB as it is not being redefined.
-    });
 }
+
+// Use event delegation to handle TAB/ESC for all forum textareas,
+// including those dynamically added when switching threads or loading
+// new posts, ensuring consistent behavior regardless of how the
+// textarea was inserted into the DOM.
+
+$(document).on('keydown', 'textarea.thread_post_content', function (event) {
+    if (event.which === 27) {
+        const controls = $(':tabbable').filter(':visible');
+        controls.eq(controls.index(this) + 1).focus();
+        return false;
+    }
+    else if (!event.shiftKey && event.code === 'Tab') {
+        const beforeCurse = this.selectionStart;
+        this.setRangeText('\t', this.selectionStart, this.selectionEnd, 'end');
+        this.selectionStart = this.selectionEnd = beforeCurse + 1;
+        this.dispatchEvent(new Event('input', { bubbles: true }));
+        return false;
+    }
+});
 
 function confirmBypass(str, redirect) {
     if (confirm(str)) {
@@ -1283,6 +1309,7 @@ function updateGradeOverride() {
         cache: false,
         contentType: false,
         success: function (data) {
+            // eslint-disable-next-line no-useless-assignment
             let json = {};
             try {
                 json = JSON.parse(data);
@@ -1317,6 +1344,7 @@ function loadOverriddenGrades(g_id) {
     $.ajax({
         url: url,
         success: function (data) {
+            // eslint-disable-next-line no-useless-assignment
             let json = {};
             try {
                 json = JSON.parse(data);
@@ -1723,9 +1751,10 @@ function peerFeedbackUpload(grader_id, user_id, g_id, feedback) {
     });
 }
 
-function popOutSubmittedFile(html_file, url_file) {
+function openSubmittedFile(html_file, url_file) {
     let directory = '';
     const display_file_url = buildCourseUrl(['display_file']);
+
     if (url_file.includes('submissions_processed')) {
         directory = 'submissions_processed';
     }
@@ -1748,10 +1777,12 @@ function popOutSubmittedFile(html_file, url_file) {
         directory = 'attachments';
     }
     file_path = `${display_file_url}?dir=${encodeURIComponent(directory)}&file=${encodeURIComponent(html_file)}&path=${encodeURIComponent(url_file)}&ta_grading=true`;
+
+    // If #submission_browser exists, the view is a grading context and the file should open in a new tab.
     if ($('#submission_browser').length > 0) {
         file_path += `&gradeable_id=${$('#submission_browser').data('gradeable-id')}`;
     }
-    window.open(file_path, '_blank', 'toolbar=no,scrollbars=yes,resizable=yes, width=700, height=600');
+    window.open(file_path, '_blank');
     return false;
 }
 

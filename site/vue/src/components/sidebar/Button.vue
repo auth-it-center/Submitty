@@ -27,7 +27,7 @@ function getButtonId(button: Button): string | undefined {
   <ul>
     <template
       v-for="button in buttons"
-      :key="button.title"
+      :key="button.title ?? undefined"
     >
       <li v-if="!button.title || (mobile && button.title === 'Collapse Sidebar')">
         <hr />
@@ -85,5 +85,6 @@ function getButtonId(button: Button): string | undefined {
 .flex-line {
     display: flex;
     align-items: center;
+    gap: 12px;
 }
 </style>

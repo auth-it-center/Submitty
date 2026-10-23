@@ -1,5 +1,9 @@
 /* global displaySuccessMessage, hljs, luxon, buildCourseUrl, csrfToken,
-    displayErrorMessage, escapeSpecialChars */
+    displayErrorMessage, escapeSpecialChars, updateThreads, enableTabsInTextArea,
+    getFileExtension, deleteSingleFile, removeLabel, get_part_number, file_array,
+    previous_files, label_array, cancelDeferredSave, captureTabInModal,
+    WebSocketClient, removeMessagePopup, CodeMirror, autosaveEnabled, deferredSave,
+    cleanupAutosaveHistory, forumFilterCategories */
 /* exported markForDeletion */
 /* exported unMarkForDeletion */
 /* exported  displayHistoryAttachment */
@@ -37,19 +41,28 @@ function categoriesFormEvents() {
 
 function openFileForum(directory, file, path) {
     const url = `${buildCourseUrl(['display_file'])}?dir=${directory}&file=${file}&path=${path}`;
-    window.open(url, '_blank', 'toolbar=no,scrollbars=yes,resizable=yes, width=700, height=600');
+    window.open(url, '_blank');
+
+    const newWindow = window.open(url, '_blank', 'noopener,noreferrer');
+    if (newWindow !== null) {
+        newWindow.opener = null;
+    }
 }
 
-function checkForumFileExtensions(post_box_id, files) {
+function isValidForumAttachment(file) {
+    const mime_type = file.type || '';
+    const lower_name = file.name.toLowerCase();
+    return mime_type.startsWith('image/') || mime_type === 'application/pdf' || lower_name.endsWith('.pdf');
+}
+
+function checkForumFileTypes(post_box_id, files) {
     const count = files.length;
     for (let i = 0; i < files.length; i++) {
-        // eslint-disable-next-line no-undef
-        const extension = getFileExtension(files[i].name);
-        if (!['gif', 'png', 'jpg', 'jpeg', 'bmp'].includes(extension)) {
-            // eslint-disable-next-line no-undef
-            deleteSingleFile(files[i].name, post_box_id, false);
-            // eslint-disable-next-line no-undef
-            removeLabel(files[i].name, post_box_id);
+        if (!isValidForumAttachment(files[i])) {
+            if (typeof post_box_id !== 'undefined') {
+                deleteSingleFile(files[i].name, post_box_id, false);
+                removeLabel(files[i].name, post_box_id);
+            }
             files.splice(i, 1);
             i--;
         }
@@ -70,8 +83,8 @@ function checkNumFilesForumUpload(input, post_id) {
         resetForumFileUploadAfterError(displayPostId);
     }
     else {
-        if (!checkForumFileExtensions(input.files)) {
-            displayErrorMessage('Invalid file type. Please upload only image files. (PNG, JPG, GIF, BMP...)');
+        if (!checkForumFileTypes(post_id, Array.from(input.files))) {
+            displayErrorMessage('Invalid file type. Please upload only image or PDF files.');
             resetForumFileUploadAfterError(displayPostId);
             return;
         }
@@ -87,7 +100,6 @@ function uploadImageAttachments(attachment_box) {
         if (e[0].addedNodes.length === 0 || e[0].addedNodes[0].className === 'thumbnail') {
             return;
         }
-        // eslint-disable-next-line no-undef
         const part = get_part_number(e[0]);
         if (isNaN(parseInt(part))) {
             return;
@@ -95,19 +107,24 @@ function uploadImageAttachments(attachment_box) {
         const target = $(e[0].target).find('tr')[$(e[0].target).find('tr').length - 1];
         let file_object = null;
         const filename = $(target).attr('fname');
-        // eslint-disable-next-line no-undef
         for (let j = 0; j < file_array[part - 1].length; j++) {
-            // eslint-disable-next-line no-undef
             if (file_array[part - 1][j].name === filename) {
-                // eslint-disable-next-line no-undef
                 file_object = file_array[part - 1][j];
                 break;
             }
         }
-        const image = document.createElement('div');
-        $(image).addClass('thumbnail');
-        $(image).css('background-image', `url(${window.URL.createObjectURL(file_object)})`);
-        target.prepend(image);
+        const preview = document.createElement('div');
+        const isPdf = file_object && (file_object.type === 'application/pdf' || (file_object.name && /\.pdf$/i.test(file_object.name)));
+
+        if (isPdf) {
+            $(preview).addClass('thumbnail thumbnail-pdf');
+            $(preview).text('PDF');
+        }
+        else {
+            $(preview).addClass('thumbnail');
+            $(preview).css('background-image', `url(${window.URL.createObjectURL(file_object)})`);
+        }
+        target.prepend(preview);
     });
     $(attachment_box).each(function () {
         observer.observe($(this)[0], {
@@ -120,39 +137,28 @@ function uploadImageAttachments(attachment_box) {
 function testAndGetAttachments(post_box_id, dynamic_check) {
     const index = post_box_id - 1;
     const files = [];
-    // eslint-disable-next-line no-undef
     for (let j = 0; j < file_array[index].length; j++) {
-        // eslint-disable-next-line no-undef
         if (file_array[index][j].name.indexOf('\'') !== -1
-            // eslint-disable-next-line no-undef
             || file_array[index][j].name.indexOf('"') !== -1) {
-            // eslint-disable-next-line no-undef
             alert(`ERROR! You may not use quotes in your filename: ${file_array[index][j].name}`);
             return false;
         }
-        // eslint-disable-next-line no-undef
         else if (file_array[index][j].name.indexOf('\\\\') !== -1
-            // eslint-disable-next-line no-undef
             || file_array[index][j].name.indexOf('/') !== -1) {
-            // eslint-disable-next-line no-undef
             alert(`ERROR! You may not use a slash in your filename: ${file_array[index][j].name}`);
             return false;
         }
-        // eslint-disable-next-line no-undef
         else if (file_array[index][j].name.indexOf('<') !== -1
-            // eslint-disable-next-line no-undef
             || file_array[index][j].name.indexOf('>') !== -1) {
-            // eslint-disable-next-line no-undef
             alert(`ERROR! You may not use angle brackets in your filename: ${file_array[index][j].name}`);
             return false;
         }
-        // eslint-disable-next-line no-undef
         files.push(file_array[index][j]);
     }
 
     let valid = true;
-    if (!checkForumFileExtensions(post_box_id, files)) {
-        displayErrorMessage('Invalid file type. Please upload only image files. (PNG, JPG, GIF, BMP...)');
+    if (!checkForumFileTypes(post_box_id, files)) {
+        displayErrorMessage('Invalid file type. Please upload only image or PDF files.');
         valid = false;
     }
 
@@ -226,7 +232,6 @@ function publishFormWithAttachments(form, test_category, error_message, is_threa
                 return;
             }
             // Now that we've successfully submitted the form, clear autosave data
-            // eslint-disable-next-line no-undef
             cancelDeferredSave(autosaveKeyFor(form));
             clearReplyBoxAutosave(form);
 
@@ -321,11 +326,8 @@ function socketNewOrEditPostHandler(post_id, reply_level, post_box_id = null, ed
                 $(`#${post_id}`).addClass('new_post');
                 $(`#${post_id}-reply`).css('display', 'none');
                 $(`#${post_id}-reply`).submit(publishPost);
-                // eslint-disable-next-line no-undef
                 previous_files[post_box_id] = [];
-                // eslint-disable-next-line no-undef
                 label_array[post_box_id] = [];
-                // eslint-disable-next-line no-undef
                 file_array[post_box_id] = [];
                 uploadImageAttachments(`#${post_id}-reply .upload_attachment_box`);
                 hljs.highlightAll();
@@ -372,6 +374,14 @@ function socketDeletePostHandler(post_id) {
     });
 }
 
+function insertFirstThread(new_thread) {
+    const insertion_point = $('#thread_list .thread-list-insertion-point').first();
+    const thread = $(new_thread);
+
+    thread.insertAfter(insertion_point).hide().fadeIn('slow');
+    $('.thread-list-empty').remove();
+}
+
 function socketNewOrEditThreadHandler(thread_id, edit = false) {
     $.ajax({
         type: 'POST',
@@ -381,7 +391,10 @@ function socketNewOrEditThreadHandler(thread_id, edit = false) {
             try {
                 const new_thread = JSON.parse(response).data;
                 if (!edit) {
-                    if ($(new_thread).find('.thread-announcement').length !== 0) {
+                    if ($('.thread_box_link').length === 0) {
+                        insertFirstThread(new_thread);
+                    }
+                    else if ($(new_thread).find('.thread-announcement').length !== 0) {
                         const last_bookmarked_announcement = $('.thread-announcement').siblings('.thread-favorite').last().parent().parent();
                         if (last_bookmarked_announcement.length !== 0) {
                             $(new_thread).insertAfter(last_bookmarked_announcement.next()).hide().fadeIn('slow');
@@ -421,8 +434,12 @@ function socketNewOrEditThreadHandler(thread_id, edit = false) {
                 return;
             }
         },
-        error: function (a, b) {
-            window.alert('Something went wrong when adding new thread. Please refresh the page.');
+        error: function (jqXHR, textStatus, errorThrown) {
+            // Firefox will abort requests during page reloads (often showing up as status 0 or textStatus 'error' with empty errorThrown)
+            if (textStatus === 'abort' || jqXHR.status === 0) {
+                return;
+            }
+            displayErrorMessage('Something went wrong when adding new thread. Please refresh the page.');
         },
     });
 }
@@ -668,7 +685,6 @@ function socketUnpinThreadHandler(thread_id) {
 }
 
 function initSocketClient() {
-    // eslint-disable-next-line no-undef
     window.socketClient = new WebSocketClient();
     window.socketClient.onmessage = (msg) => {
         switch (msg.type) {
@@ -875,7 +891,6 @@ function showEditPostForm(post_id, thread_id, shouldEditThread, render_markdown,
                 $('#thread_post_anon_edit').remove();
             }
             $('#edit-user-post').css('display', 'block');
-            // eslint-disable-next-line no-undef
             captureTabInModal('edit-user-post');
             $('.cat-buttons input').prop('checked', false);
             $('#edit-user-post [id^="markdown_input_"]').val(json.markdown === true ? '1' : '0');
@@ -965,26 +980,6 @@ function changeDisplayOptions(option) {
     window.location.replace(`${buildCourseUrl(['forum', 'threads', thread_id])}?option=${option}`);
 }
 
-function readCategoryValues() {
-    const categories_value = [];
-    $('#thread_category button').each(function () {
-        if ($(this).data('btn-selected') === 'true') {
-            categories_value.push($(this).data('cat_id'));
-        }
-    });
-    return categories_value;
-}
-
-function readThreadStatusValues() {
-    const thread_status_value = [];
-    $('#thread_status_select button').each(function () {
-        if ($(this).data('btn-selected') === 'true') {
-            thread_status_value.push($(this).data('sel_id'));
-        }
-    });
-    return thread_status_value;
-}
-
 function dynamicScrollLoadPage(element, atEnd) {
     const load_page = $(element).data(atEnd ? 'next_page' : 'prev_page');
     if (load_page === -1) {
@@ -1052,15 +1047,10 @@ function dynamicScrollLoadPage(element, atEnd) {
 
     const next_url = urlPattern.replace('{{#}}', load_page);
 
-    let categories_value = readCategoryValues();
-    let thread_status_value = readThreadStatusValues();
-
-    // var thread_status_value = $("#thread_status_select").val();
-    const unread_select_value = $('#unread').is(':checked');
-    // eslint-disable-next-line eqeqeq
-    categories_value = (categories_value == null) ? '' : categories_value.join('|');
-    // eslint-disable-next-line eqeqeq
-    thread_status_value = (thread_status_value == null) ? '' : thread_status_value.join('|');
+    const categories_value = currentFilterState.categories.join('|');
+    const thread_status_value = currentFilterState.statuses.join('|');
+    const search_query = currentFilterState.searchContent;
+    const unread_select_value = currentFilterState.unread;
     $.ajax({
         url: next_url,
         type: 'POST',
@@ -1068,6 +1058,7 @@ function dynamicScrollLoadPage(element, atEnd) {
             thread_categories: categories_value,
             thread_status: thread_status_value,
             unread_select: unread_select_value,
+            search_query: search_query,
             scroll_down: atEnd,
             currentThreadId: currentThreadId,
             currentCategoriesId: currentCategoriesId,
@@ -1172,17 +1163,23 @@ function alterShowMergeThreadStatus(newStatus, course) {
 }
 
 function modifyThreadList(currentThreadId, currentCategoriesId, course, loadFirstPage, success_callback) {
-    let categories_value = readCategoryValues();
-    let thread_status_value = readThreadStatusValues();
+    const categories_value = currentFilterState.categories.join('|');
+    const thread_status_value = currentFilterState.statuses.join('|');
+    const unread_select_value = currentFilterState.unread;
+    const search_query = currentFilterState.searchContent;
 
-    const unread_select_value = $('#unread').is(':checked');
-    // eslint-disable-next-line eqeqeq
-    categories_value = (categories_value == null) ? '' : categories_value.join('|');
-    // eslint-disable-next-line eqeqeq
-    thread_status_value = (thread_status_value == null) ? '' : thread_status_value.join('|');
+    // Check if no changes since last update
+    if (categories_value === Cookies.get(`${course}_forum_categories`)
+        && thread_status_value === Cookies.get('forum_thread_status')
+        && unread_select_value === (Cookies.get('unread_select_value') === 'true')
+        && search_query === Cookies.get('search_query')) {
+        return;
+    }
+
     Cookies.set(`${course}_forum_categories`, categories_value, { path: '/' });
     Cookies.set('forum_thread_status', thread_status_value, { path: '/' });
     Cookies.set('unread_select_value', unread_select_value, { path: '/' });
+    Cookies.set('search_query', search_query, { path: '/' });
     const url = `${buildCourseUrl(['forum', 'threads'])}?page_number=${(loadFirstPage ? '0' : '-1')}`;
     $.ajax({
         url: url,
@@ -1191,6 +1188,7 @@ function modifyThreadList(currentThreadId, currentCategoriesId, course, loadFirs
             thread_categories: categories_value,
             thread_status: thread_status_value,
             unread_select: unread_select_value,
+            search_query: search_query,
             currentThreadId: currentThreadId,
             currentCategoriesId: currentCategoriesId,
             csrf_token: csrfToken,
@@ -1200,9 +1198,12 @@ function modifyThreadList(currentThreadId, currentCategoriesId, course, loadFirs
             const page_number = parseInt(x.page_number);
             const threadCount = parseInt(x.count);
             x = x.html;
+            if (threadCount === 0) {
+                x = '<div class="thread-list-empty">No threads found.</div>';
+            }
             x = `${x}`;
             const jElement = $('#thread_list');
-            jElement.children(':not(.fas)').remove();
+            jElement.children(':not(.fas):not(.thread-list-insertion-point)').remove();
             $('#thread_list .fa-caret-up').after(x);
             jElement.data('prev_page', page_number - 1);
             jElement.data('next_page', page_number + 1);
@@ -1218,6 +1219,7 @@ function modifyThreadList(currentThreadId, currentCategoriesId, course, loadFirs
             }
 
             $('#num_filtered').text(threadCount);
+            $('#thread_list').data('search-query', search_query);
 
             dynamicScrollLoadIfScrollVisible(jElement);
             loadThreadHandler();
@@ -1276,6 +1278,7 @@ function updateLikesDisplay(post_id, data) {
     const staffLiked = data['likesFromStaff'];
 
     const likeCounterElement = document.getElementById(`likeCounter_${post_id}`);
+    // eslint-disable-next-line no-useless-assignment
     let likeCounter = parseInt(likeCounterElement.innerText);
 
     const likeIconSrc = document.getElementById(`likeIcon_${post_id}`);
@@ -1329,7 +1332,6 @@ function replyPost(post_id) {
 function generateCodeMirrorBlocks(container_element) {
     const codeSegments = container_element.querySelectorAll('.code');
     for (const element of codeSegments) {
-        // eslint-disable-next-line no-undef
         const editor0 = CodeMirror.fromTextArea(element, {
             lineNumbers: true,
             readOnly: true,
@@ -1385,7 +1387,6 @@ function showSplit(post_id) {
             else {
                 document.getElementById('split_post_previously_merged').style.display = 'block';
                 document.getElementById('split_post_submit').disabled = false;
-                // eslint-disable-next-line no-undef
                 captureTabInModal('popup-post-split', false);
             }
             document.getElementById('split_post_input').value = json['title'];
@@ -1408,7 +1409,6 @@ function showSplit(post_id) {
                 }
             }
             $('#popup-post-split').show();
-            // eslint-disable-next-line no-undef
             captureTabInModal('popup-post-split');
         },
         error: function () {
@@ -1440,7 +1440,6 @@ function showHistory(post_id) {
                 return;
             }
             $('#popup-post-history').show();
-            // eslint-disable-next-line no-undef
             captureTabInModal('popup-post-history');
             $('#popup-post-history .post_box.history_box').remove();
             $('#popup-post-history .form-body').css('padding', '5px');
@@ -1495,9 +1494,7 @@ function showHistory(post_id) {
     });
 }
 
-function addNewCategory(csrf_token) {
-    const newCategory = $('#new_category_text').val();
-    const visibleDate = $('#category_visible_date').val();
+function addNewCategory(newCategory, visibleDate) {
     const url = buildCourseUrl(['forum', 'categories', 'new']);
     $.ajax({
         url: url,
@@ -1506,7 +1503,7 @@ function addNewCategory(csrf_token) {
             newCategory: newCategory,
             visibleDate: visibleDate,
             rank: $('[id^="categorylistitem-').length,
-            csrf_token: csrf_token,
+            csrf_token: csrfToken,
         },
         success: function (data) {
             try {
@@ -1522,7 +1519,6 @@ function addNewCategory(csrf_token) {
                 return;
             }
             displaySuccessMessage(`Successfully created category ${escapeSpecialChars(newCategory)}.`);
-            $('#new_category_text').val('');
             // Create new item in #ui-category-list using dummy category
             const category_id = json['data']['new_id'];
             const category_color_code = '#000080';
@@ -1591,7 +1587,7 @@ function deleteCategory(category_id, category_desc, csrf_token) {
 
 function editCategory(category_id, category_desc, category_color, category_date, changed, csrf_token) {
     if (category_desc === null && category_color === null && category_date === null) {
-        return;
+        return true;
     }
     const data = { category_id: category_id, csrf_token: csrf_token };
     if (category_desc !== null && changed === 'desc') {
@@ -1627,14 +1623,21 @@ function editCategory(category_id, category_desc, category_color, category_date,
             }
             displaySuccessMessage(`Successfully updated category "${category_desc}"!`);
             setTimeout(() => {
-                // eslint-disable-next-line no-undef
                 removeMessagePopup('theid');
             }, 1000);
             if (category_desc !== null) {
-                $(`#categorylistitem-${category_id}`).find('.categorylistitem-desc span').text(category_desc);
+                const item = $(`#categorylistitem-${category_id}`);
+                item.data('category_desc', category_desc);
+                item.find('.categorylistitem-desc span').text(category_desc);
+                item.find('.categorylistitem-editdesc').hide();
+                item.find('.categorylistitem-desc').show();
             }
             if (category_date !== null) {
-                $(`#categorylistitem-${category_id}`).find('.categorylistitemdate-desc span').text(category_date);
+                const item = $(`#categorylistitem-${category_id}`);
+                item.data('visible_date', category_date);
+                item.find('.categorylistitemdate-desc span').text(category_date);
+                item.find('.categorylistitemdate-editdesc').hide();
+                item.find('.categorylistitemdate-desc').show();
             }
 
             refreshCategories();
@@ -1643,6 +1646,7 @@ function editCategory(category_id, category_desc, category_color, category_date,
             window.alert('Something went wrong while trying to add a new category. Please try again.');
         },
     });
+    return true;
 }
 
 function refreshCategories() {
@@ -1769,7 +1773,6 @@ function reorderCategories(csrf_token) {
             }
             displaySuccessMessage('Successfully reordered categories.');
             setTimeout(() => {
-                // eslint-disable-next-line no-undef
                 removeMessagePopup('theid');
             }, 1000);
             refreshCategories();
@@ -1818,6 +1821,7 @@ function deletePostToggle(isDeletion, thread_id, post_id, author, time, csrf_tok
                     displayErrorMessage(json['message']);
                     return;
                 }
+                // eslint-disable-next-line no-useless-assignment
                 let new_url = '';
                 switch (json['data']['type']) {
                     case 'thread':
@@ -1839,7 +1843,7 @@ function deletePostToggle(isDeletion, thread_id, post_id, author, time, csrf_tok
     }
 }
 
-function alterAnnouncement(thread_id, confirmString, type, csrf_token) {
+function alterAnnouncement(thread_id, confirmString, type) {
     const confirm = window.confirm(confirmString);
     if (confirm) {
         const url = `${buildCourseUrl(['forum', 'announcements'])}?type=${type}`;
@@ -1848,7 +1852,7 @@ function alterAnnouncement(thread_id, confirmString, type, csrf_token) {
             type: 'POST',
             data: {
                 thread_id: thread_id,
-                csrf_token: csrf_token,
+                csrf_token: csrfToken,
             },
             success: function (data) {
                 window.location.reload();
@@ -1951,53 +1955,6 @@ function checkInputMaxLength(obj) {
     }
 }
 
-function sortTable(sort_element_index, reverse = false) {
-    const table = document.getElementById('forum_stats_table');
-    let switching = true;
-    while (switching) {
-        switching = false;
-        const rows = table.getElementsByTagName('TBODY');
-        // eslint-disable-next-line no-var
-        for (var i = 1; i < rows.length - 1; i++) {
-            const a = rows[i].getElementsByTagName('TR')[0].getElementsByTagName('TD')[sort_element_index];
-            const b = rows[i + 1].getElementsByTagName('TR')[0].getElementsByTagName('TD')[sort_element_index];
-            if (reverse) {
-                // eslint-disable-next-line eqeqeq
-                if (sort_element_index == 0 ? a.innerHTML < b.innerHTML : parseInt(a.innerHTML) > parseInt(b.innerHTML)) {
-                    rows[i].parentNode.insertBefore(rows[i + 1], rows[i]);
-                    switching = true;
-                }
-            }
-            else {
-                // eslint-disable-next-line eqeqeq
-                if (sort_element_index == 0 ? a.innerHTML > b.innerHTML : parseInt(a.innerHTML) < parseInt(b.innerHTML)) {
-                    rows[i].parentNode.insertBefore(rows[i + 1], rows[i]);
-                    switching = true;
-                }
-            }
-        }
-    }
-
-    const row0 = table.getElementsByTagName('TBODY')[0].getElementsByTagName('TR')[0];
-    const headers = row0.getElementsByTagName('TH');
-
-    // eslint-disable-next-line no-var, no-redeclare
-    for (var i = 0; i < headers.length; i++) {
-        const index = headers[i].innerHTML.indexOf(' ↓');
-        const reverse_index = headers[i].innerHTML.indexOf(' ↑');
-
-        if (index > -1 || reverse_index > -1) {
-            headers[i].innerHTML = escapeSpecialChars(headers[i].innerHTML.slice(0, -2));
-        }
-    }
-    if (reverse) {
-        headers[sort_element_index].innerHTML = escapeSpecialChars(`${headers[sort_element_index].innerHTML} ↑`);
-    }
-    else {
-        headers[sort_element_index].innerHTML = escapeSpecialChars(`${headers[sort_element_index].innerHTML} ↓`);
-    }
-}
-
 function loadThreadHandler() {
     $('a.thread_box_link').off('click').click(async function (event) {
         // if a thread is clicked on the full-forum-page just follow normal GET request else continue with ajax request
@@ -2092,6 +2049,14 @@ function showAttachmentsOnload() {
     $('#toggle-attachments-button').find('.attachment-badge').text($('.attachment-btn').length);
 }
 
+function updateGlobalAttachmentButtonState() {
+    const anyVisible = $('.attachment-well').is(':visible');
+    const newState = anyVisible ? 'true' : 'false';
+    Cookies.set('show_forum_attachments', newState, { expires: 365, path: '/' });
+    const buttonText = `${anyVisible ? 'Hide' : 'Show'} attachments`;
+    $('#toggle-attachments-button').find('.status').text(buttonText);
+}
+
 function loadAllInlineImages(open_override = false) {
     if (open_override) {
         $('.attachment-btn').each(function (i) {
@@ -2130,29 +2095,54 @@ function loadInlineImages(encoded_data) {
 
     // if they're no images loaded for this well
     if (attachment_well.children().length === 0) {
-    // add image tags
+        // add attachment previews
         for (let i = 0; i < data.length - 1; i++) {
             const attachment = data[i];
+            const attachmentDiv = $('<div class="attachment-preview"></div>');
             const url = attachment[0];
-            const img = $(`<img src="${url}" alt="Click to view attachment in popup" title="Click to view attachment in popup" class="attachment-img">`);
-            const title = $(`<p>${escapeSpecialChars(decodeURI(attachment[2]))}</p>`);
+            const img = $(`<img src="${url}" alt="Click to view attachment in new tab" title="Click to view attachment in new tab" class="attachment-img">`);
             img.click(function () {
                 const url = $(this).attr('src');
-                window.open(url, '_blank', 'toolbar=no,scrollbars=yes,resizable=yes, width=700, height=600');
+                window.open(url, '_blank');
             });
-            attachment_well.append(img);
-            attachment_well.append(title);
+
+            const name = decodeURIComponent(attachment[2]);
+            const type = attachment[3] || 'image';
+            const title = $(`<p>${escapeSpecialChars(name)}</p>`);
+
+            if (type === 'pdf') {
+                const pdfPreview = $(`
+                    <div class="attachment-pdf">
+                        <a href="${url}" target="_blank" rel="noopener noreferrer" class="btn btn-default attachment-open-btn">Open PDF</a>
+                        <iframe
+                            src="${url}"
+                            title="PDF attachment preview for ${escapeSpecialChars(name)}"
+                            class="attachment-pdf-preview"
+                        ></iframe>
+                    </div>
+                `);
+                attachmentDiv.append(pdfPreview);
+            }
+            else {
+                const imageLink = $(`
+                    <a href="${url}" target="_blank" rel="noopener noreferrer">
+                        <img src="${url}" alt="Click to view attachment in a new tab" title="Click to view attachment in a new tab" class="attachment-img">
+                    </a>
+                `);
+                attachmentDiv.append(imageLink);
+            }
+
+            attachmentDiv.append(title);
+            attachment_well.append(attachmentDiv);
         }
     }
+    updateGlobalAttachmentButtonState();
 }
 
 function openInWindow(img) {
     const url = $(img).attr('src');
-    window.open(url, '_blank', 'toolbar=no,scrollbars=yes,resizable=yes, width=700, height=600');
+    window.open(url, '_blank');
 }
-
-// eslint-disable-next-line no-var
-var filters_applied = [];
 
 // Taken from https://stackoverflow.com/a/1988361/2650341
 
@@ -2186,60 +2176,103 @@ if (!Array.prototype.toggleElement) {
     });
 }
 
-function clearForumFilter() {
-    if (checkUnread()) {
-        $('#filter_unread_btn').click();
-    }
-    window.filters_applied = [];
-    $('#thread_category button, #thread_status_select button').data('btn-selected', 'false').removeClass('filter-active').addClass('filter-inactive');
-    $('#filter_unread_btn').removeClass('filter-active').addClass('filter-inactive');
-    $('#clear_filter_button').css('visibility', 'hidden');
+let currentFilterState = { categories: [], statuses: [], unread: false, searchContent: '' };
 
-    // eslint-disable-next-line no-undef
-    updateThreads(true, null);
+function seedFilterState(categories, statuses, unread) {
+    currentFilterState = {
+        categories: (categories ?? []).map(Number),
+        statuses: (statuses ?? []).map(Number),
+        unread: false,
+        searchContent: '',
+    };
+    refreshFilterBar({
+        initialSelectedCategoryIds: currentFilterState.categories,
+        initialSelectedThreadStatuses: currentFilterState.statuses,
+        initialUnreadChecked: false,
+    });
+}
+
+function onFilterChange(state) {
+    currentFilterState = {
+        ...currentFilterState,
+        categories: state.categories,
+        statuses: state.statuses,
+        unread: state.unread,
+    };
+    updateClearFilterButton();
+    updateThreads(true, saveFilterState);
+}
+
+function onSearchChange(query) {
+    currentFilterState = { ...currentFilterState, searchContent: query };
+    updateClearFilterButton();
+    updateThreads(true, saveFilterState);
+}
+
+function refreshSearchBar(query) {
+    document.querySelector('.search-bar-wrapper')?.reRender({ searchQuery: query });
+}
+
+function refreshFilterBar(seeds) {
+    const categories = typeof forumFilterCategories !== 'undefined' ? forumFilterCategories : [];
+    document.querySelector('.js-filter-bar')?.reRender({
+        categories,
+        ...seeds,
+    });
+}
+
+function clearForumFilter() {
+    currentFilterState = { categories: [], statuses: [], unread: false, searchContent: '' };
+    refreshFilterBar({
+        initialSelectedCategoryIds: [],
+        initialSelectedThreadStatuses: [],
+        initialUnreadChecked: false,
+    });
+    refreshSearchBar('');
+    updateClearFilterButton();
+    updateThreads(true, saveFilterState);
+
     return false;
 }
 
-function loadFilterHandlers() {
-    $('#filter_unread_btn').mousedown(function (e) {
-        $(this).toggleClass('filter-inactive filter-active');
+function updateClearFilterButton() {
+    const hasFilters = currentFilterState.categories.length > 0
+        || currentFilterState.statuses.length > 0
+        || currentFilterState.unread
+        || currentFilterState.searchContent.length > 0;
+    $('#clear_filter_button').css('visibility', hasFilters ? 'visible' : 'hidden');
+}
+
+function getFilterState() {
+    return {
+        'categories': currentFilterState.categories,
+        'thread-status': currentFilterState.statuses,
+        'search-content': currentFilterState.searchContent,
+    };
+}
+
+function saveFilterState() {
+    history.pushState(getFilterState(), '');
+}
+
+function setFilterState(state) {
+    if (state === null) {
+        return;
+    }
+    currentFilterState = {
+        categories: (state['categories'] ?? []).map(Number),
+        statuses: (state['thread-status'] ?? []).map(Number),
+        unread: currentFilterState.unread,
+        searchContent: state['search-content'] ?? '',
+    };
+    refreshFilterBar({
+        initialSelectedCategoryIds: currentFilterState.categories,
+        initialSelectedThreadStatuses: currentFilterState.statuses,
+        initialUnreadChecked: currentFilterState.unread,
     });
-
-    $('#thread_category button, #thread_status_select button').mousedown(function (e) {
-        e.preventDefault();
-        const current_selection = $(this).data('btn-selected');
-
-        if (current_selection === 'true') {
-            $(this).data('btn-selected', 'false').removeClass('filter-active').addClass('filter-inactive');
-        }
-        else {
-            $(this).data('btn-selected', 'true').removeClass('filter-inactive').addClass('filter-active');
-        }
-
-        const filter_text = $(this).text();
-
-        window.filters_applied.toggleElement(filter_text, (e) => {
-            return e === filter_text;
-        });
-
-        if (window.filters_applied.length === 0) {
-            clearForumFilter();
-        }
-        else {
-            $('#clear_filter_button').css('visibility', 'visible');
-        }
-        // eslint-disable-next-line no-undef
-        updateThreads(true, null);
-        return true;
-    });
-
-    $('#unread').change((e) => {
-        e.preventDefault();
-        // eslint-disable-next-line no-undef
-        updateThreads(true, null);
-        checkUnread();
-        return true;
-    });
+    refreshSearchBar(currentFilterState.searchContent);
+    updateClearFilterButton();
+    updateThreads(true, null);
 }
 
 function thread_post_handler() {
@@ -2251,7 +2284,7 @@ function thread_post_handler() {
 }
 
 function forumFilterBar() {
-    $('#forum_filter_bar').toggle();
+    $('.js-filter-bar').toggle();
 }
 
 function getDeletedAttachments() {
@@ -2315,19 +2348,6 @@ function updateThread(e) {
     });
 }
 
-function checkUnread() {
-    if ($('#unread').prop('checked')) {
-        // eslint-disable-next-line no-undef
-        unread_marked = true;
-        $('#filter_unread_btn').removeClass('filter-inactive').addClass('filter-active');
-        $('#clear_filter_button').css('visibility', 'visible');
-        return true;
-    }
-    else {
-        return false;
-    }
-}
-
 // Used to update thread content in the "Merge Thread"
 // modal.
 function updateSelectedThreadContent(selected_thread_first_post_id) {
@@ -2355,8 +2375,7 @@ function updateSelectedThreadContent(selected_thread_first_post_id) {
             }
 
             json = json['data'];
-            // eslint-disable-next-line no-restricted-syntax
-            $('#thread-content').html(json['post']);
+            $('#thread-content').text(json['post']);
             if (json.markdown === true) {
                 $('#thread-content').addClass('markdown-active');
             }
@@ -2384,7 +2403,6 @@ function autosaveKeyFor(replyBox) {
 
 function saveReplyBoxToLocal(replyBox) {
     const inputBox = $(replyBox).find('textarea.thread_post_content');
-    // eslint-disable-next-line no-undef
     if (autosaveEnabled) {
         if (inputBox.val()) {
             const anonCheckbox = $(replyBox).find('input.thread-anon-checkbox');
@@ -2403,7 +2421,6 @@ function saveReplyBoxToLocal(replyBox) {
 }
 
 function restoreReplyBoxFromLocal(replyBox) {
-    // eslint-disable-next-line no-undef
     if (autosaveEnabled) {
         const json = localStorage.getItem(autosaveKeyFor(replyBox));
         if (json) {
@@ -2415,7 +2432,6 @@ function restoreReplyBoxFromLocal(replyBox) {
 }
 
 function clearReplyBoxAutosave(replyBox) {
-    // eslint-disable-next-line no-undef
     if (autosaveEnabled) {
         localStorage.removeItem(autosaveKeyFor(replyBox));
     }
@@ -2457,8 +2473,8 @@ function setupForumAutosave() {
     // on the create thread page.
     $('form.reply-box, form.post_reply_form, #thread_form').each((_index, replyBox) => {
         restoreReplyBoxFromLocal(replyBox);
+        enableTabsInTextArea($(replyBox).find('textarea.thread_post_content'));
         $(replyBox).find('textarea.thread_post_content').on('input',
-            // eslint-disable-next-line no-undef
             () => deferredSave(autosaveKeyFor(replyBox), () => saveReplyBoxToLocal(replyBox), 1),
         );
         $(replyBox).find('input.thread-anon-checkbox').change(() => saveReplyBoxToLocal(replyBox));
@@ -2471,7 +2487,6 @@ const CREATE_THREAD_DEFER_KEY = 'create-thread';
 const CREATE_THREAD_AUTOSAVE_KEY = `${window.location.pathname}-create-autosave`;
 
 function saveCreateThreadToLocal() {
-    // eslint-disable-next-line no-undef
     if (autosaveEnabled) {
         const title = $('#title').val();
         const categories = $('div.cat-buttons.btn-selected').get().map((e) => e.innerText);
@@ -2506,7 +2521,6 @@ function saveCreateThreadToLocal() {
 }
 
 function restoreCreateThreadFromLocal() {
-    // eslint-disable-next-line no-undef
     if (autosaveEnabled) {
         const json = localStorage.getItem(CREATE_THREAD_AUTOSAVE_KEY);
         if (!json) {
@@ -2555,7 +2569,6 @@ function clearCreateThreadAutosave() {
 $(() => {
     showAttachmentsOnload();
     if (typeof cleanupAutosaveHistory === 'function') {
-        // eslint-disable-next-line no-undef
         cleanupAutosaveHistory('-forum-autosave');
         setupForumAutosave();
     }
@@ -2625,7 +2638,6 @@ function showUpduckUsers(post_id, csrf_token) {
             if (data.status === 'success') {
                 $('#popup-post-likes').show();
                 $('body').addClass('popup-active');
-                // eslint-disable-next-line no-undef
                 captureTabInModal('popup-post-likes');
 
                 $('#popup-post-likes .form-body').empty();

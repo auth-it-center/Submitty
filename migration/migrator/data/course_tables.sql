@@ -3,6 +3,7 @@
 --
 
 
+
 SET statement_timeout = 0;
 SET lock_timeout = 0;
 SET idle_in_transaction_session_timeout = 0;
@@ -675,6 +676,55 @@ CREATE TABLE public.autograding_metrics (
 
 
 --
+-- Name: autograding_testcase; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.autograding_testcase (
+    id integer NOT NULL,
+    g_id character varying(255) NOT NULL,
+    testcase_id character varying(255) NOT NULL,
+    testcase_order integer NOT NULL,
+    hidden boolean NOT NULL,
+    extra_credit boolean NOT NULL,
+    points_possible numeric(10,0) NOT NULL
+);
+
+
+--
+-- Name: autograding_testcase_data; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.autograding_testcase_data (
+    atd_id integer NOT NULL,
+    user_id character varying(255),
+    team_id character varying(255),
+    g_version integer NOT NULL,
+    points_earned numeric(10,0) NOT NULL,
+    CONSTRAINT user_team_id_check CHECK (((user_id IS NOT NULL) <> (team_id IS NOT NULL)))
+);
+
+
+--
+-- Name: autograding_testcase_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.autograding_testcase_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: autograding_testcase_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.autograding_testcase_id_seq OWNED BY public.autograding_testcase.id;
+
+
+--
 -- Name: calendar_messages; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -787,7 +837,8 @@ CREATE TABLE public.chatrooms (
     is_active boolean DEFAULT false NOT NULL,
     allow_anon boolean DEFAULT true NOT NULL,
     session_started_at timestamp with time zone,
-    is_deleted boolean DEFAULT false NOT NULL
+    is_deleted boolean DEFAULT false NOT NULL,
+    allow_read_only_after_end boolean DEFAULT false NOT NULL
 );
 
 
@@ -958,7 +1009,6 @@ CREATE TABLE public.electronic_gradeable (
     CONSTRAINT eg_grade_inquiry_allowed_true CHECK (((eg_grade_inquiry_allowed IS TRUE) OR (eg_grade_inquiry_per_component_allowed IS FALSE))),
     CONSTRAINT eg_grade_inquiry_due_date_max CHECK ((eg_grade_inquiry_due_date <= '9999-03-01 00:00:00-05'::timestamp with time zone)),
     CONSTRAINT eg_grade_inquiry_start_date_max CHECK ((eg_grade_inquiry_start_date <= '9999-03-01 00:00:00-05'::timestamp with time zone)),
-    CONSTRAINT eg_submission_date CHECK ((eg_submission_open_date <= eg_submission_due_date)),
     CONSTRAINT eg_submission_due_date_max CHECK ((eg_submission_due_date <= '9999-03-01 00:00:00-05'::timestamp with time zone)),
     CONSTRAINT eg_team_lock_date_max CHECK ((eg_team_lock_date <= '9999-03-01 00:00:00-05'::timestamp with time zone)),
     CONSTRAINT late_days_positive CHECK ((eg_late_days >= 0))
@@ -1157,9 +1207,8 @@ CREATE TABLE public.gradeable (
     g_syllabus_bucket character varying(255) NOT NULL,
     g_allowed_minutes integer,
     g_allow_custom_marks boolean DEFAULT true NOT NULL,
-    CONSTRAINT g_grade_due_date CHECK ((g_grade_due_date <= g_grade_released_date)),
-    CONSTRAINT g_grade_start_date CHECK ((g_grade_start_date <= g_grade_due_date)),
-    CONSTRAINT g_ta_view_start_date CHECK ((g_ta_view_start_date <= g_grade_start_date))
+    g_use_custom_grading_order boolean DEFAULT false NOT NULL,
+    g_enable_custom_sort boolean DEFAULT false NOT NULL
 );
 
 
@@ -1322,6 +1371,19 @@ CREATE SEQUENCE public.gradeable_component_mark_gcm_id_seq
 --
 
 ALTER SEQUENCE public.gradeable_component_mark_gcm_id_seq OWNED BY public.gradeable_component_mark.gcm_id;
+
+
+--
+-- Name: gradeable_custom_grading_order; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.gradeable_custom_grading_order (
+    g_id character varying(255) NOT NULL,
+    user_id character varying(255),
+    team_id character varying(255),
+    sort_order integer NOT NULL,
+    CONSTRAINT gradeable_custom_grading_order_submitter_check CHECK ((((user_id IS NOT NULL) AND (team_id IS NULL)) OR ((user_id IS NULL) AND (team_id IS NOT NULL))))
+);
 
 
 --
@@ -1621,7 +1683,8 @@ CREATE TABLE public.notifications (
     from_user_id character varying(255),
     to_user_id character varying(255) NOT NULL,
     created_at timestamp(0) with time zone NOT NULL,
-    seen_at timestamp(0) with time zone
+    seen_at timestamp(0) with time zone,
+    gradeable_id character varying(255) DEFAULT NULL::character varying
 );
 
 
@@ -1678,7 +1741,9 @@ CREATE TABLE public.peer_grading_panel (
     rubric boolean DEFAULT true NOT NULL,
     files boolean DEFAULT true NOT NULL,
     solution_notes boolean DEFAULT true NOT NULL,
-    discussion boolean DEFAULT true NOT NULL
+    discussion boolean DEFAULT true NOT NULL,
+    peer_files_restricted boolean DEFAULT false NOT NULL,
+    peer_file_patterns jsonb DEFAULT '[]'::jsonb NOT NULL
 );
 
 
@@ -1987,6 +2052,85 @@ ALTER SEQUENCE public.student_favorites_id_seq OWNED BY public.student_favorites
 
 
 --
+-- Name: ta_grading_clustering_configs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ta_grading_clustering_configs (
+    id integer NOT NULL,
+    g_id character varying(255) NOT NULL,
+    algorithm character varying(255) NOT NULL,
+    created_at timestamp(0) with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
+
+--
+-- Name: ta_grading_clustering_configs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.ta_grading_clustering_configs ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.ta_grading_clustering_configs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: ta_grading_clusters; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ta_grading_clusters (
+    id integer NOT NULL,
+    config_id integer NOT NULL,
+    cluster_name character varying(255)
+);
+
+
+--
+-- Name: ta_grading_clusters_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.ta_grading_clusters ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.ta_grading_clusters_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: ta_grading_clusters_members; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ta_grading_clusters_members (
+    id integer NOT NULL,
+    cluster_id integer NOT NULL,
+    user_id character varying(255) DEFAULT NULL::character varying,
+    team_id character varying(255) DEFAULT NULL::character varying,
+    active_version integer NOT NULL,
+    CONSTRAINT cluster_member_check CHECK ((((user_id IS NOT NULL) AND (team_id IS NULL)) OR ((user_id IS NULL) AND (team_id IS NOT NULL))))
+);
+
+
+--
+-- Name: ta_grading_clusters_members_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.ta_grading_clusters_members ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.ta_grading_clusters_members_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: teams; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2080,6 +2224,7 @@ CREATE TABLE public.users (
     display_pronouns boolean DEFAULT false,
     user_preferred_locale character varying,
     previous_rotating_section integer,
+    date_registered timestamp without time zone,
     CONSTRAINT check_registration_type CHECK (((registration_type)::text = ANY (ARRAY[('graded'::character varying)::text, ('audit'::character varying)::text, ('withdrawn'::character varying)::text, ('staff'::character varying)::text]))),
     CONSTRAINT users_user_group_check CHECK (((user_group >= 1) AND (user_group <= 4))),
     CONSTRAINT users_user_last_initial_format_check CHECK (((user_last_initial_format >= 0) AND (user_last_initial_format <= 3)))
@@ -2102,6 +2247,13 @@ CREATE TABLE public.viewed_responses (
 --
 
 ALTER TABLE ONLY public.active_graders ALTER COLUMN id SET DEFAULT nextval('public.active_graders_id_seq'::regclass);
+
+
+--
+-- Name: autograding_testcase id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.autograding_testcase ALTER COLUMN id SET DEFAULT nextval('public.autograding_testcase_id_seq'::regclass);
 
 
 --
@@ -2334,6 +2486,14 @@ ALTER TABLE ONLY public.autograding_metrics
 
 
 --
+-- Name: autograding_testcase autograding_testcase_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.autograding_testcase
+    ADD CONSTRAINT autograding_testcase_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: categories_list categories_list_pk; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2507,6 +2667,30 @@ ALTER TABLE ONLY public.gradeable_component_mark
 
 ALTER TABLE ONLY public.gradeable_component
     ADD CONSTRAINT gradeable_component_pkey PRIMARY KEY (gc_id);
+
+
+--
+-- Name: gradeable_custom_grading_order gradeable_custom_grading_order_position_unique; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.gradeable_custom_grading_order
+    ADD CONSTRAINT gradeable_custom_grading_order_position_unique UNIQUE (g_id, sort_order);
+
+
+--
+-- Name: gradeable_custom_grading_order gradeable_custom_grading_order_team_unique; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.gradeable_custom_grading_order
+    ADD CONSTRAINT gradeable_custom_grading_order_team_unique UNIQUE (g_id, team_id);
+
+
+--
+-- Name: gradeable_custom_grading_order gradeable_custom_grading_order_user_unique; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.gradeable_custom_grading_order
+    ADD CONSTRAINT gradeable_custom_grading_order_user_unique UNIQUE (g_id, user_id);
 
 
 --
@@ -2782,6 +2966,38 @@ ALTER TABLE ONLY public.student_favorites
 
 
 --
+-- Name: ta_grading_clustering_configs ta_grading_clustering_configs_g_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ta_grading_clustering_configs
+    ADD CONSTRAINT ta_grading_clustering_configs_g_id_key UNIQUE (g_id);
+
+
+--
+-- Name: ta_grading_clustering_configs ta_grading_clustering_configs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ta_grading_clustering_configs
+    ADD CONSTRAINT ta_grading_clustering_configs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ta_grading_clusters_members ta_grading_clusters_members_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ta_grading_clusters_members
+    ADD CONSTRAINT ta_grading_clusters_members_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ta_grading_clusters ta_grading_clusters_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ta_grading_clusters
+    ADD CONSTRAINT ta_grading_clusters_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: teams teams_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2933,6 +3149,41 @@ CREATE INDEX notifications_to_user_created_at_index ON public.notifications USIN
 --
 
 CREATE INDEX notifications_to_user_id_index ON public.notifications USING btree (to_user_id);
+
+
+--
+-- Name: notifications_user_gradeable_unseen_index; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX notifications_user_gradeable_unseen_index ON public.notifications USING btree (to_user_id, gradeable_id) WHERE ((gradeable_id IS NOT NULL) AND (seen_at IS NULL));
+
+
+--
+-- Name: ta_grading_clusters_config_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ta_grading_clusters_config_id_idx ON public.ta_grading_clusters USING btree (config_id);
+
+
+--
+-- Name: ta_grading_clusters_members_cluster_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ta_grading_clusters_members_cluster_id_idx ON public.ta_grading_clusters_members USING btree (cluster_id);
+
+
+--
+-- Name: ta_grading_clusters_members_team_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ta_grading_clusters_members_team_id_idx ON public.ta_grading_clusters_members USING btree (team_id);
+
+
+--
+-- Name: ta_grading_clusters_members_user_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ta_grading_clusters_members_user_id_idx ON public.ta_grading_clusters_members USING btree (user_id);
 
 
 --
@@ -3128,19 +3379,19 @@ ALTER TABLE ONLY public.electronic_gradeable_version
 
 
 --
--- Name: course_materials_sections fk_course_material_id; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.course_materials_sections
-    ADD CONSTRAINT fk_course_material_id FOREIGN KEY (course_material_id) REFERENCES public.course_materials(id) ON DELETE CASCADE;
-
-
---
 -- Name: course_materials_access fk_course_material_id; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.course_materials_access
     ADD CONSTRAINT fk_course_material_id FOREIGN KEY (course_material_id) REFERENCES public.course_materials(id);
+
+
+--
+-- Name: course_materials_sections fk_course_material_id; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.course_materials_sections
+    ADD CONSTRAINT fk_course_material_id FOREIGN KEY (course_material_id) REFERENCES public.course_materials(id) ON DELETE CASCADE;
 
 
 --
@@ -3173,6 +3424,14 @@ ALTER TABLE ONLY public.lichen_run_access
 
 ALTER TABLE ONLY public.course_materials_sections
     ADD CONSTRAINT fk_section_id FOREIGN KEY (section_id) REFERENCES public.sections_registration(sections_registration_id) ON DELETE CASCADE;
+
+
+--
+-- Name: autograding_testcase_data fk_testcase; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.autograding_testcase_data
+    ADD CONSTRAINT fk_testcase FOREIGN KEY (atd_id) REFERENCES public.autograding_testcase(id) ON DELETE CASCADE;
 
 
 --
@@ -3405,6 +3664,30 @@ ALTER TABLE ONLY public.gradeable_component_mark_data
 
 ALTER TABLE ONLY public.gradeable_component_mark
     ADD CONSTRAINT gradeable_component_mark_gc_id_fkey FOREIGN KEY (gc_id) REFERENCES public.gradeable_component(gc_id) ON DELETE CASCADE;
+
+
+--
+-- Name: gradeable_custom_grading_order gradeable_custom_grading_order_gradeable_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.gradeable_custom_grading_order
+    ADD CONSTRAINT gradeable_custom_grading_order_gradeable_fk FOREIGN KEY (g_id) REFERENCES public.gradeable(g_id) ON DELETE CASCADE;
+
+
+--
+-- Name: gradeable_custom_grading_order gradeable_custom_grading_order_team_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.gradeable_custom_grading_order
+    ADD CONSTRAINT gradeable_custom_grading_order_team_fk FOREIGN KEY (team_id) REFERENCES public.gradeable_teams(team_id) ON DELETE CASCADE;
+
+
+--
+-- Name: gradeable_custom_grading_order gradeable_custom_grading_order_user_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.gradeable_custom_grading_order
+    ADD CONSTRAINT gradeable_custom_grading_order_user_fk FOREIGN KEY (user_id) REFERENCES public.users(user_id) ON DELETE CASCADE;
 
 
 --
@@ -3784,6 +4067,46 @@ ALTER TABLE ONLY public.student_favorites
 
 
 --
+-- Name: ta_grading_clustering_configs ta_grading_clustering_configs_g_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ta_grading_clustering_configs
+    ADD CONSTRAINT ta_grading_clustering_configs_g_id_fkey FOREIGN KEY (g_id) REFERENCES public.gradeable(g_id) ON DELETE CASCADE;
+
+
+--
+-- Name: ta_grading_clusters ta_grading_clusters_config_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ta_grading_clusters
+    ADD CONSTRAINT ta_grading_clusters_config_id_fkey FOREIGN KEY (config_id) REFERENCES public.ta_grading_clustering_configs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: ta_grading_clusters_members ta_grading_clusters_members_cluster_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ta_grading_clusters_members
+    ADD CONSTRAINT ta_grading_clusters_members_cluster_id_fkey FOREIGN KEY (cluster_id) REFERENCES public.ta_grading_clusters(id) ON DELETE CASCADE;
+
+
+--
+-- Name: ta_grading_clusters_members ta_grading_clusters_members_team_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ta_grading_clusters_members
+    ADD CONSTRAINT ta_grading_clusters_members_team_id_fkey FOREIGN KEY (team_id) REFERENCES public.gradeable_teams(team_id) ON DELETE CASCADE;
+
+
+--
+-- Name: ta_grading_clusters_members ta_grading_clusters_members_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ta_grading_clusters_members
+    ADD CONSTRAINT ta_grading_clusters_members_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(user_id) ON DELETE CASCADE;
+
+
+--
 -- Name: teams teams_team_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3850,4 +4173,5 @@ ALTER TABLE ONLY public.viewed_responses
 --
 -- PostgreSQL database dump complete
 --
+
 

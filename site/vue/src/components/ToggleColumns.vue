@@ -14,6 +14,10 @@ const { columns, labels, cookie, hiddenColumns = [], forced = [], format = 'bits
     buttonWrapped?: boolean;
 }>();
 
+const emit = defineEmits<{
+    save: [];
+}>();
+
 const selected = ref<boolean[]>([]);
 const visible = ref(false);
 
@@ -30,12 +34,16 @@ function loadColumns() {
                 selected.value[columns.indexOf(col)] = true;
             }
         }
-        return;
     }
     else if (format === 'bits') {
         const cookieData = Cookies.get(cookie)?.split('-') || Array(columns.length).fill('1');
         selected.value = columns.map((_, i) => cookieData[i] === '1');
     }
+    columns.forEach((col, idx) => {
+        if (forced.includes(col)) {
+            selected.value[idx] = true;
+        }
+    });
 }
 function saveColumns() {
     if (format === 'json') {
@@ -44,8 +52,6 @@ function saveColumns() {
             cookieData[col] = selected.value[i];
         });
         Cookies.set(cookie, JSON.stringify(cookieData), { expires: 365, path: '/' });
-        window.location.reload();
-        return;
     }
     else if (format === 'bits') {
         Cookies.set(
@@ -54,7 +60,7 @@ function saveColumns() {
             { expires: 365, path: '/' },
         );
     }
-    window.location.reload();
+    emit('save');
 }
 function fillAll(val: boolean) {
     selected.value = selected.value.map((_, idx) => forced?.includes(columns[idx]) || val);
@@ -86,7 +92,7 @@ onMounted(loadColumns);
         <a
           id="toggle-columns"
           data-testid="toggle-columns"
-          class="btn btn-primary"
+          class="btn btn-primary toggle-btn"
           @click="toggle"
         >Toggle Columns</a>
       </div>
@@ -94,7 +100,7 @@ onMounted(loadColumns);
         v-else
         id="toggle-columns"
         data-testid="toggle-columns"
-        class="btn btn-primary"
+        class="btn btn-primary toggle-btn"
         @click="toggle"
       >Toggle Columns</a>
     </template>
@@ -116,7 +122,7 @@ onMounted(loadColumns);
             :disabled="forced?.includes(id)"
             :data-testid="`toggle-${id}`"
           />
-          <label :for="id">{{ labels[idx] }}</label>
+          <label :for="`toggle-${id}`">{{ labels[idx] }}</label>
         </div>
       </div>
       <div class="toggle-all-buttons">
@@ -135,3 +141,12 @@ onMounted(loadColumns);
     </template>
   </Popup>
 </template>
+<style scoped>
+  .toggle-btn {
+    font-family: Arial, sans-serif;
+  }
+
+  .toggle-columns-box:not(:disabled) + label {
+    cursor: pointer;
+  }
+</style>

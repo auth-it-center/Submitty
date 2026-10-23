@@ -139,7 +139,8 @@ select {
 }
 
 .peer-button {
-    background-color: var(--standard-plum-purple);
+    background-color: var(--standard-mediumorchid);
+    /* stylelint-disable-next-line color-named */
     color: white;
 }
 
@@ -179,6 +180,18 @@ a.nav-bar.normal-btn {
 }
 
 a.nav-bar.active-btn {
+    background-color: var(--submitty-logo-blue);
+    color: var(--btn-text-white);
+    font-weight: bold;
+}
+
+.peer-results-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.peer-results-tabs .btn.active-btn {
     background-color: var(--submitty-logo-blue);
     color: var(--btn-text-white);
     font-weight: bold;
@@ -292,8 +305,6 @@ div.btn-container {
     height: 34px;
     width: auto;
     padding: 5px;
-    padding-left: 5px;
-    padding-right: 5px;
     border-radius: 5px;
 }
 
@@ -428,11 +439,20 @@ body::-webkit-scrollbar-track {
 }
 
 .main-folder {
-    margin-bottom: 1em;
+    margin-bottom: 4px;
 }
 
 .main-folder-contents {
-    margin-left: 23px;
+    margin-left: 31px;
+}
+
+.binary-file-type {
+    color: var(--text-black);
+    pointer-events: none;
+}
+
+.individual-folder-content {
+    margin: 10px 0;
 }
 
 .config-about-add {
@@ -466,7 +486,6 @@ body::-webkit-scrollbar-track {
 
 .config-folder-view {
     list-style-type: none;
-    margin-bottom: 1em;
     margin-left: 0.5em;
 }
 
@@ -621,4 +640,14 @@ pre.CodeMirror-line {
     justify-content: flex-start;
     margin-top: 5px;
     gap: 5px 15px;
+}
+.peer-file-pattern-input-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.peer-file-pattern-input {
+    flex: 1;
+    min-width: 400px;
 }

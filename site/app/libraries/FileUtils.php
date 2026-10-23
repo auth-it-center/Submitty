@@ -13,6 +13,9 @@ class FileUtils {
     const IGNORE_FOLDERS = [".svn", ".git", ".idea", "__macosx"];
     const IGNORE_FILES = ['.ds_store'];
     const ALLOWED_IMAGE_TYPES = ['jpg', 'jpeg', 'png', 'gif'];
+    // also update in 'file-utils.ts'
+    const SUBMISSION_META_FILES = ['.submit.notebook', '.submit.timestamp', '.submit.VCS_CHECKOUT',
+    '.user_assignment_access.json', '.bulk_upload_data.json'];
 
     /**
      * Return all files from a given directory.  All subdirectories
@@ -396,7 +399,7 @@ class FileUtils {
      * @return bool
      */
     public static function isValidFileName($filename) {
-        if (!is_string($filename)) {
+        if (!is_string($filename) || $filename === '') {
             return false;
         }
         else {
@@ -408,6 +411,14 @@ class FileUtils {
                     || $char == "<"
                     || $char == ">"
                 ) {
+                    return false;
+                }
+            }
+            if (str_starts_with($filename, "/")) {
+                return false;
+            }
+            foreach (explode("/", rtrim($filename, "/")) as $segment) {
+                if ($segment === ".." || $segment === "") {
                     return false;
                 }
             }
@@ -446,6 +457,19 @@ class FileUtils {
 
         $sep = DIRECTORY_SEPARATOR;
         return preg_replace('#' . preg_quote($sep) . '+#', $sep, join($sep, $paths));
+    }
+
+    // also update in 'file-utils.ts'
+    /**
+     * Given a filename, checks whether it is a Submitty metadata file.
+     * @param string $filename
+     * @return bool
+     */
+    public static function isSubmissionMetaFile(string $filename): bool {
+        if (in_array($filename, self::SUBMISSION_META_FILES, true)) {
+            return true;
+        }
+        return str_starts_with($filename, '.upload_page_') || str_starts_with($filename, '.upload_version_');
     }
 
     /**
@@ -842,5 +866,40 @@ class FileUtils {
         }
 
         return true;
+    }
+
+    /**
+     * Given a path, checks that it resolves to a file or directory inside one of the directories holding a
+     * submitter's files for a gradeable (submissions, submissions_processed, checkout, results or
+     * results_public). Symlinks and relative segments are resolved first, so a path that escapes
+     * those directories is rejected.
+     *
+     * @param string $path Path to check, it must exist
+     * @param string $course_path Absolute path to the course directory
+     * @param string $gradeable_id
+     * @param string $submitter_id User or team id
+     * @return bool
+     */
+    public static function isInSubmitterDirectory(string $path, string $course_path, string $gradeable_id, string $submitter_id): bool {
+        // joinPaths() drops empty arguments, so an empty id would widen the base to every submitter
+        foreach ([$gradeable_id, $submitter_id] as $id) {
+            if ($id === '' || $id === '.' || $id === '..' || str_contains($id, '/')) {
+                return false;
+            }
+        }
+
+        // realpath('') resolves to the current working directory
+        $resolved_path = realpath($path);
+        if ($path === '' || $resolved_path === false) {
+            return false;
+        }
+
+        foreach (['submissions', 'submissions_processed', 'checkout', 'results', 'results_public'] as $dir) {
+            $base = realpath(FileUtils::joinPaths($course_path, $dir, $gradeable_id, $submitter_id));
+            if ($base !== false && str_starts_with($resolved_path, $base . DIRECTORY_SEPARATOR)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

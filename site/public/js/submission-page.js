@@ -40,6 +40,7 @@ function syncWithServer(criticalSync) {
         contentType: false,
         success: function (res) {
             lastTime = Date.now();
+            // eslint-disable-next-line no-useless-assignment
             let response = {};
 
             try {
@@ -64,6 +65,9 @@ function syncWithServer(criticalSync) {
                 }
                 curTime = data.current_time;
                 deadline = data.deadline;
+                if (isTimed && user_deadline !== 0) {
+                    user_deadline = Math.min(user_deadline, deadline);
+                }
                 updateTime();
                 if (!popUpTimerStarted && isTimed && allowedTime > 25) {
                     // eslint-disable-next-line no-undef
@@ -99,7 +103,7 @@ function syncWithServer(criticalSync) {
         }
     }
 }
-function checkDeadline() {
+async function checkDeadline() {
     if (Math.abs(Date.now() - lastTime) > 5000) {
         // we need to sync back up
         syncWithServer(true);
@@ -112,7 +116,7 @@ function checkDeadline() {
         const time = Math.abs(Math.floor((curTime - deadline) / 1000));
         const days = Math.floor(time / (3600 * 24));
         if (document.getElementById('gradeable-time-remaining-text') !== null) {
-            if (curTime > deadline) {
+            if (curTime > deadline && deadline !== 0) {
                 return 1 + days;
             }
         }
@@ -154,6 +158,10 @@ function updateTime() {
             }
         }
         if (user_deadline !== 0) {
+            const gradeable_timer = document.getElementById('gradeable-time-remaining-text');
+            if (gradeable_timer !== null) {
+                gradeable_timer.style.visibility = 'hidden';
+            }
             if (document.getElementById('time-remaining-text') !== null) {
                 if (curTime > user_deadline) {
                     document.getElementById('time-remaining-text').textContent = 'Your Time Remaining: Past Due';
@@ -166,7 +174,8 @@ function updateTime() {
                     mins = Math.floor(time / 60) % 60;
                     hours = Math.floor(time / 3600) % 24;
                     days = Math.floor(time / (3600 * 24));
-                    width = ((Date.now() - startTime) / 1000 / 60 / allowedTime * 100) * 0.95 + 5;
+                    const percent_used = Math.min(1, Math.max(0, ((Date.now() - startTime) / 1000 / 60) / allowedTime));
+                    width = (percent_used * 95) + 5;
                     if (width > 75 && width < 90) {
                         document.getElementById('gradeable-progress-bar').style.backgroundColor = 'var(--standard-vibrant-yellow)';
                     }

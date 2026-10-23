@@ -87,14 +87,6 @@ function draghandle(e) {
 
 // ADD FILES FOR NEW SUBMISSION
 // ========================================================================================
-// check if adding a file is valid (not exceeding the limit)
-function addIsValid(files_to_add, total_added_files) {
-    if (files_to_add + total_added_files > MAX_NUM_OF_FILES) {
-        alert('Exceeded the max number of files to submit.\nPlease upload your files as a .zip file if it is necessary for you to submit more than this limit.');
-        return false;
-    }
-    return true;
-}
 
 // initialize maximum no of files with that of the php_ini value
 function initMaxNoFiles(max_no_of_files) {
@@ -105,12 +97,10 @@ function initMaxNoFiles(max_no_of_files) {
 function drop(e) {
     draghandle(e);
     const filestream = e.dataTransfer.files;
-    if (addIsValid(filestream.length, total_files_added)) {
-        const part = get_part_number(e);
-        for (let i = 0; i < filestream.length; i++) {
-            addFileWithCheck(filestream[i], part); // check for folders
-            total_files_added++;
-        }
+    const part = get_part_number(e);
+    for (let i = 0; i < filestream.length; i++) {
+        addFileWithCheck(filestream[i], part); // check for folders
+        total_files_added++;
     }
 }
 
@@ -118,12 +108,10 @@ function drop(e) {
 function dropWithMultipleZips(e) {
     draghandle(e);
     const filestream = e.dataTransfer.files;
-    if (addIsValid(filestream.length, total_files_added)) {
-        const part = get_part_number(e);
-        for (let i = 0; i < filestream.length; i++) {
-            addFileWithCheck(filestream[i], part, false); // check for folders
-            total_files_added++;
-        }
+    const part = get_part_number(e);
+    for (let i = 0; i < filestream.length; i++) {
+        addFileWithCheck(filestream[i], part, false); // check for folders
+        total_files_added++;
     }
 }
 
@@ -154,11 +142,9 @@ function get_part_number(e) {
 // copy files selected from the file browser
 function addFilesFromInput(part, check_duplicate_zip = true) {
     const filestream = document.getElementById(`input-file${part}`).files;
-    if (addIsValid(filestream.length, total_files_added)) {
-        for (let i = 0; i < filestream.length; i++) {
-            addFile(filestream[i], part, check_duplicate_zip); // folders will not be selected in file browser, no need for check
-            total_files_added++;
-        }
+    for (let i = 0; i < filestream.length; i++) {
+        addFile(filestream[i], part, check_duplicate_zip); // folders will not be selected in file browser, no need for check
+        total_files_added++;
     }
     $(`#input-file${part}`).val('');
 }
@@ -465,7 +451,7 @@ function handle_input_keypress(inactive_version) {
 // BULK UPLOAD
 // ========================================================================================
 function openFile(url_full) {
-    window.open(url_full, '_blank', 'toolbar=no,scrollbars=yes,resizable=yes, width=700, height=600');
+    window.open(url_full, '_blank');
 }
 
 // HANDLE SUBMISSION
@@ -499,7 +485,42 @@ function isValidSubmission() {
 
     return false;
 }
+function settleJsonResponse(response, resolve, reject) {
+    let parsed;
+    try {
+        parsed = JSON.parse(response);
+    }
+    catch (e) {
+        console.error('Failed to parse server response:', response);
+        reject({
+            status: 'failed',
+            message: `Failed to parse server response as JSON (${e.message}). Raw response: ${response}`,
+        });
+        return;
+    }
+    if (parsed === null || typeof parsed !== 'object') {
+        console.error('Unexpected server response:', response);
+        reject({
+            status: 'failed',
+            message: `Unexpected server response (expected a JSON object). Raw response: ${response}`,
+        });
+        return;
+    }
+    if (parsed['status'] === 'success') {
+        resolve(parsed);
+    }
+    else {
+        reject(parsed);
+    }
+}
 
+function describeAjaxError(jqXHR, errorThrown, action) {
+    if (jqXHR.status === 0) {
+        return `${action} failed: could not reach the server`;
+    }
+    const body = jqXHR.responseText ? `: ${jqXHR.responseText}` : '';
+    return `${action} failed (HTTP ${jqXHR.status} ${errorThrown})${body}`;
+}
 /**
  * @param csrf_token
  * @param gradeable_id
@@ -518,17 +539,13 @@ function validateUserId(csrf_token, gradeable_id, user_id) {
             },
             type: 'POST',
             success: function (response) {
-                response = JSON.parse(response);
-                if (response['status'] === 'success') {
-                    resolve(response);
-                }
-                else {
-                    reject(response);
-                }
+                settleJsonResponse(response, resolve, reject);
             },
-            error: function (err) {
-                console.log(`Error while trying to validate user id${user_id}`);
-                reject({ status: 'failed', message: err });
+            error: function (jqXHR, textStatus, errorThrown) {
+                reject({
+                    status: 'failed',
+                    message: describeAjaxError(jqXHR, errorThrown, `Validating user id ${user_id}`),
+                });
             },
         });
     });
@@ -688,17 +705,13 @@ function submitSplitItem(csrf_token, gradeable_id, user_id, path, merge_previous
             },
             type: 'POST',
             success: function (response) {
-                response = JSON.parse(response);
-                if (response['status'] === 'success') {
-                    resolve(response);
-                }
-                else {
-                    reject(response);
-                }
+                settleJsonResponse(response, resolve, reject);
             },
-            error: function (err) {
-                console.log('Failed while submiting split item');
-                reject({ status: 'failed', message: err });
+            error: function (jqXHR, textStatus, errorThrown) {
+                reject({
+                    status: 'failed',
+                    message: describeAjaxError(jqXHR, errorThrown, `Submitting ${user_id}`),
+                });
             },
         });
     });
@@ -722,17 +735,13 @@ function deleteSplitItem(csrf_token, gradeable_id, path) {
             },
             type: 'POST',
             success: function (response) {
-                response = JSON.parse(response);
-                if (response['status'] === 'success') {
-                    resolve(response);
-                }
-                else {
-                    reject(response);
-                }
+                settleJsonResponse(response, resolve, reject);
             },
-            error: function (jqXHR, err_msg) {
-                console.error('Failed while deleting split item');
-                reject({ status: 'failed', message: err_msg });
+            error: function (jqXHR, textStatus, errorThrown) {
+                reject({
+                    status: 'failed',
+                    message: describeAjaxError(jqXHR, errorThrown, `Deleting ${path}`),
+                });
             },
         });
     });
@@ -868,7 +877,9 @@ function gatherInputAnswersByType(type) {
 
     for (let i = 0; i < inputs.length; i++) {
         const this_input_answer = inputs[i];
+        // eslint-disable-next-line no-useless-assignment
         let key = '';
+        // eslint-disable-next-line no-useless-assignment
         let value = '';
         if (type === 'codebox') {
             key = this_input_answer.id;
@@ -970,6 +981,7 @@ function handleSubmission(gradeable_status, remaining_late_days_for_gradeable, c
     $('#submit').prop('disabled', true);
     const submit_url = `${buildCourseUrl(['gradeable', gradeable_id, 'upload'])}?merge=${merge_previous.toString()}&clobber=${clobber.toString()}`;
     const return_url = buildCourseUrl(['gradeable', gradeable_id]);
+    // eslint-disable-next-line no-useless-assignment
     let message = '';
     // check versions used
     if (versions_used >= versions_allowed) {

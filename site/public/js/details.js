@@ -1,5 +1,5 @@
 /* global courseUrl, showPopup, escapeSpecialChars, full_access_grader_permission, is_team_assignment, is_student */
-/* exported gradeableMessageAgree, gradeableMessageCancel, showGradeableMessage, hideGradeableMessage, expandAllSections, collapseAllSections, grade_inquiry_only, reverse_inquiry_only, inquiry_update */
+/* exported expandAllSections, collapseAllSections, toggleAllSections, updateToggleButtonLabel, grade_inquiry_only, reverse_inquiry_only, inquiry_update */
 
 const MOBILE_BREAKPOINT = 951;
 
@@ -30,14 +30,14 @@ $(document).ready(() => {
         }
     });
 
-    // Creating and adding style for the pseudo selector in the details-table
+    // Adds labels to values in mobile view using pseudo selector :before
     const style = document.createElement('style');
     let content = '';
     // loop over the head row of `details-table`
     $('#details-table thead tr th').each(function (idx) {
         if (idx) {
-            // the content to be added is inside this data attr
-            content = $(this).data('col-title');
+            // add each header's text as a label for that column's values in the student's submission
+            content = $(this).data('col-title') ?? '';
             style.innerHTML += `
               #details-table td:nth-of-type(${escapeSpecialChars((idx + 1).toString())}):before {
                   content: "${escapeSpecialChars(content)}";
@@ -46,46 +46,15 @@ $(document).ready(() => {
         }
     });
     document.head.appendChild(style);
-
-    if (!localStorage.getItem(gradeableMessageStorageKey()) && document.getElementById('gradeable-message-data').dataset.userlevel !== '1') {
-        const form = $('#gradeable-message-popup');
-        form.css('display', 'block');
-        form.find('.form-body').scrollTop(0);
-    }
 });
 
-function gradeableMessageStorageKey() {
-    const dataElement = document.getElementById('gradeable-message-data');
-    const semester = dataElement.dataset.semester;
-    const course = dataElement.dataset.course;
-    const gradeable = dataElement.dataset.gradeable;
-    return `${semester}-${course}-${gradeable}-message`;
+function getCollapsedSections() {
+    return JSON.parse(Cookies.get('collapsed_sections') || '[]');
 }
 
-function gradeableMessageAgree() {
-    if (!localStorage.getItem(gradeableMessageStorageKey())) {
-        localStorage.setItem(gradeableMessageStorageKey(), 'agreed');
-        const form = $('#gradeable-message-popup');
-        form.css('display', 'none');
-    }
-    return false;
-}
-
-function gradeableMessageCancel() {
-    window.location = courseUrl;
-}
-
-function showGradeableMessage() {
-    const message = $('#gradeable-message-popup');
-    message.css('display', 'block');
-    $('#agree-button').css('display', 'none');
-    $('#cancel-button').css('display', 'none');
-    $('#close-hidden-button').css('display', 'block');
-}
-
-function hideGradeableMessage() {
-    const message = $('#gradeable-message-popup');
-    message.css('display', 'none');
+// The button label is rendered by the Vue component, from here we push new state to it via reRender.
+function updateToggleButtonLabel(collapsed) {
+    document.querySelector('.js-toggle-all-sections')?.reRender?.({ collapsed });
 }
 
 function updateCollapsedSections() {
@@ -99,6 +68,7 @@ function expandAllSections() {
     });
     collapseItems.clear();
     updateCollapsedSections();
+    updateToggleButtonLabel(false);
 }
 
 function collapseAllSections() {
@@ -109,6 +79,18 @@ function collapseAllSections() {
         collapseItems.add($(this).attr('data-section-id'));
     });
     updateCollapsedSections();
+    updateToggleButtonLabel(true);
+}
+
+function toggleAllSections() {
+    const collapsed = getCollapsedSections();
+
+    if (collapsed.length === 0) {
+        collapseAllSections();
+    }
+    else {
+        expandAllSections();
+    }
 }
 
 function inquiryUpdate() {
@@ -141,10 +123,11 @@ window.addEventListener('DOMContentLoaded', () => {
         assignedFilterBox.checked = (assignedFilterStatus === 'assigned' || assignedFilterStatus === undefined);
 
         // Withdrawn Students
-        const withdrawnFilterStatus = Cookies.get('include_withdrawn_students');
+        const withdrawnFilterStatus = Cookies.get('include_withdrawn_students') || 'omit';
         const withdrawnFilterBox = document.getElementById('toggle-filter-withdrawn');
+
         if (!is_team_assignment) { // Toggle not available on team assignments
-            if (withdrawnFilterStatus === 'omit' || withdrawnFilterStatus === undefined) {
+            if (withdrawnFilterStatus === 'omit') {
                 withdrawnFilterBox.checked = true;
                 withdrawnFilterElements.hide();
             }
@@ -159,13 +142,40 @@ window.addEventListener('DOMContentLoaded', () => {
         const inquiryFilterBox = document.getElementById('toggle-inquiry-only');
         inquiryFilterBox.checked = (inquiryFilterStatus === 'on');
     }
-    // Randomize Order - all graders have permission
+    // Randomize Order
     const randomFilterBox = document.getElementById('toggle-random-order');
-    const randomFilterStatus = Cookies.get('sort');
-    randomFilterBox.checked = (randomFilterStatus === 'random');
+    if (randomFilterBox !== null) {
+        const randomFilterStatus = Cookies.get('sort');
+        randomFilterBox.checked = (randomFilterStatus === 'random');
+    }
+
+    const groupByClustersBox = document.getElementById('toggle-group-by-clusters');
+    if (groupByClustersBox) {
+        const groupByClustersStatus = Cookies.get('group_by_clusters');
+        groupByClustersBox.checked = groupByClustersStatus === 'true';
+    }
 
     // Withdrawn students should always be visible in team gradeables
     if (is_team_assignment) {
         withdrawnFilterElements.show();
     }
 });
+
+function changeGroupByClusters() {
+    const isGrouped = document.getElementById('toggle-group-by-clusters').checked;
+    Cookies.set('group_by_clusters', isGrouped ? 'true' : 'false', { path: '/' });
+    window.location.reload();
+}
+
+function updateClusteringStatus(status) {
+    document.body.setAttribute('data-clustering-status', status);
+    $('#clustering-loading-banner').toggle(status === 'fetching');
+}
+
+function handleClusteringDone() {
+    window.location.reload();
+}
+
+function handleClusteringError(message) {
+    alert(message);
+}

@@ -1,10 +1,10 @@
-import { togglePanelSelectorModal } from './panel-selector-modal';
 import { initializeResizablePanels } from './resizable-panels';
 
 declare global {
     interface Window {
         updateThePanelsElements(panelsAvailabilityObj: Record<PanelElement, boolean>): void;
         changePanelsLayout (panelsCount: string | number, isLeftTaller: boolean, twoOnRight: boolean): void;
+        setPanelsVisibilities (ele: string, forceVisible: boolean | null, position: string | null): void;
     }
 }
 
@@ -18,7 +18,8 @@ type PanelElement
         | 'grade_inquiry_info'
         | 'discussion_browser'
         | 'peer_info'
-        | 'notebook-view';
+        | 'notebook-view'
+        | 'peer_participation';
 
 let panelElements: Array<{ str: PanelElement; icon: string }> = [
     { str: 'autograding_results', icon: '.grading_toolbar .fa-list' },
@@ -33,6 +34,7 @@ let panelElements: Array<{ str: PanelElement; icon: string }> = [
     { str: 'discussion_browser', icon: '.grading_toolbar .fa-comment-alt' },
     { str: 'grade_inquiry_info', icon: '.grading_toolbar .grade_inquiry_icon' },
     { str: 'notebook-view', icon: '.grading_toolbar .fas fa-book-open' },
+    { str: 'peer_participation', icon: '.grading_toolbar .fa-clipboard-list' },
 ];
 
 // Width of mobile and Tablet screens width
@@ -267,67 +269,11 @@ function checkForTwoPanelLayoutChange(
 }
 
 export function updatePanelOptions() {
-    if (taLayoutDet.numOfPanelsEnabled === 1) {
-        return;
-    }
-    $('.grade-panel .panel-position-cont').attr(
-        'size',
-        taLayoutDet.numOfPanelsEnabled,
-    );
-    const panelOptions: JQuery<HTMLOptionElement> = $(
-        '.grade-panel .panel-position-cont option',
-    );
-    panelOptions.each((idx) => {
-        if (panelOptions[idx].value === 'leftTop') {
-            if (
-                taLayoutDet.numOfPanelsEnabled === 2
-                || (taLayoutDet.numOfPanelsEnabled === 3
-                    && taLayoutDet.dividedColName === 'RIGHT')
-            ) {
-                panelOptions[idx].text = 'Open as left panel';
-            }
-            else {
-                panelOptions[idx].text = 'Open as top left panel';
-            }
-        }
-        else if (panelOptions[idx].value === 'leftBottom') {
-            if (
-                taLayoutDet.numOfPanelsEnabled === 2
-                || (taLayoutDet.numOfPanelsEnabled === 3
-                    && taLayoutDet.dividedColName === 'RIGHT')
-            ) {
-                panelOptions[idx].classList.add('hide');
-            }
-            else {
-                panelOptions[idx].classList.remove('hide');
-            }
-        }
-        else if (panelOptions[idx].value === 'rightTop') {
-            if (
-                taLayoutDet.numOfPanelsEnabled === 2
-                || (taLayoutDet.numOfPanelsEnabled === 3
-                    && taLayoutDet.dividedColName !== 'RIGHT')
-            ) {
-                panelOptions[idx].text = 'Open as right panel';
-            }
-            else {
-                panelOptions[idx].text = 'Open as top right panel';
-            }
-        }
-        else if (panelOptions[idx].value === 'rightBottom') {
-            if (
-                taLayoutDet.numOfPanelsEnabled === 2
-                || (taLayoutDet.numOfPanelsEnabled === 3
-                    && taLayoutDet.dividedColName !== 'RIGHT')
-            ) {
-                panelOptions[idx].classList.add('hide');
-            }
-            else {
-                panelOptions[idx].classList.remove('hide');
-            }
-        }
-    });
+    $('#grading-panel-header').attr('data-num-of-panels-enabled', taLayoutDet.numOfPanelsEnabled);
+    $('#grading-panel-header').attr('data-divided-col-name', taLayoutDet.dividedColName);
 }
+
+window.setPanelsVisibilities = setPanelsVisibilities;
 
 export function setPanelsVisibilities(
     ele: string,
@@ -392,6 +338,12 @@ export function setPanelsVisibilities(
     else {
         saveTaLayoutDetails();
     }
+
+    // Hide the panel's <select> listbox after a position is chosen
+    // so it doesn't block subsequent clicks on the button area
+    if (position !== null) {
+        $(`select#${ele}_select`).hide();
+    }
 }
 
 // Exchanges positions of left and right panels
@@ -422,7 +374,6 @@ export function exchangeTwoPanels() {
         )
             ? 'RIGHT'
             : 'LEFT';
-        updatePanelOptions();
         updatePanelLayoutModes();
         initializeHorizontalTwoPanelDrag();
     }
@@ -482,6 +433,7 @@ export function resetSinglePanelLayout() {
     if (taLayoutDet.currentOpenPanel) {
         setPanelsVisibilities(taLayoutDet.currentOpenPanel, true);
     }
+    updatePanelOptions();
 }
 
 export function togglePanelLayoutModes(forceVal = false) {
@@ -513,6 +465,7 @@ export function togglePanelLayoutModes(forceVal = false) {
         updatePanelLayoutModes();
     }
     else if (+taLayoutDet.numOfPanelsEnabled === 3 && !isMobileView) {
+        updatePanelOptions();
         twoPanelCont.addClass('active');
         $('.two-panel-item.two-panel-left, .two-panel-drag-bar').addClass(
             'active',
@@ -579,7 +532,6 @@ export function togglePanelLayoutModes(forceVal = false) {
             rightBottom: null,
         };
     }
-    updatePanelOptions();
 }
 
 export function toggleFullLeftColumnMode(forceVal = false) {
@@ -634,8 +586,10 @@ window.changePanelsLayout = function (panelsCount: string | number, isLeftTaller
         saveResizedColsDimensions,
     );
     initializeHorizontalTwoPanelDrag();
-    togglePanelSelectorModal(false);
     if (!taLayoutDet.isFullLeftColumnMode) {
         $('#grading-panel-student-name').show();
     }
+    updatePanelOptions();
+    // Reload the page so Vue components receive updated layout state from Twig.
+    location.reload();
 };

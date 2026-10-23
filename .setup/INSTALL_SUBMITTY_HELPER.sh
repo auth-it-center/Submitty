@@ -35,18 +35,97 @@ SUBMITTY_REPOSITORY=$(jq -r '.submitty_repository' "${SUBMITTY_CONFIG_DIR}/submi
 
 source "${SUBMITTY_REPOSITORY}/.setup/install_submitty/get_globals.sh" "config=${SUBMITTY_CONFIG_DIR:?}"
 
+# added to preserve designated files
+source <(cat <<'EOF'
+########################################################################################################################
+########################################################################################################################
+# FILE PRESERVATION FUNCTIONS
 
+PRESERVE_LIST_FILE="${SUBMITTY_CONFIG_DIR}/preserve_file_list.json"
+PRESERVE_TMP_DIR="/tmp/submitty_preserve_$$"
+PRESERVE_MANIFEST="${PRESERVE_TMP_DIR}/manifest.txt"
 
-# check optional argument
-if [[ "$#" -ge 1 && "$1" != "test" && "$1" != "clean" && "$1" != "test_rainbow"
-       && "$1" != "skip_web_restart" && "$1" != "disable_shipper_worker" ]]; then
+preserve_files_backup() {
+    if [ ! -f "$PRESERVE_LIST_FILE" ]; then
+        return 0
+    fi
+
+    echo -e "Backing up preserved files..."
+
+    mkdir -p "$PRESERVE_TMP_DIR"
+
+    if ! jq empty "$PRESERVE_LIST_FILE" 2>/dev/null; then
+        echo "Warning: preserve_file_list.json is not valid JSON, skipping file preservation"
+        return 0
+    fi
+
+    local file_count=0
+    jq -r '.[]' "$PRESERVE_LIST_FILE" 2>/dev/null | while IFS= read -r filepath; do
+        if [ -f "$filepath" ]; then
+            local file_hash=$(echo -n "$filepath" | md5sum | cut -d' ' -f1)
+            local tmp_path="$PRESERVE_TMP_DIR/$file_hash"
+
+            cp "$filepath" "$tmp_path"
+
+            echo "$tmp_path|$filepath" >> "$PRESERVE_MANIFEST"
+            file_count=$((file_count + 1))
+        fi
+    done
+
+    if [ "$file_count" -gt 0 ]; then
+        echo -e "Backed up $file_count preserved file(s) to $PRESERVE_TMP_DIR"
+    fi
+}
+
+# Function to restore files from backup
+preserve_files_restore() {
+    if [ ! -d "$PRESERVE_TMP_DIR" ] || [ ! -f "$PRESERVE_MANIFEST" ]; then
+        return 0
+    fi
+
+    echo -e "Restoring preserved files..."
+
+    local file_count=0
+    while IFS='|' read -r tmp_path orig_path; do
+        if [ -f "$tmp_path" ]; then
+            mkdir -p "$(dirname "$orig_path")"
+
+            cp "$tmp_path" "$orig_path"
+            file_count=$((file_count + 1))
+        fi
+    done < "$PRESERVE_MANIFEST"
+
+    if [ "$file_count" -gt 0 ]; then
+        echo -e "Restored $file_count preserved file(s)"
+    fi
+
+    rm -rf "$PRESERVE_TMP_DIR"
+}
+
+# ensure cleanup happens even on script failure
+trap preserve_files_restore EXIT
+EOF
+)
+
+preserve_files_backup
+
+# check optional arguments
+CLEAN=0
+QUICK=0
+TEST=0
+TEST_RAINBOW=0
+SKIP_WEB_RESTART=0
+DISABLE_SHIPPER_WORKER=0
+TEST_CASES=()
+
+print_usage() {
     echo -e "Usage:"
     echo -e "   ./INSTALL_SUBMITTY.sh"
     echo -e "   ./INSTALL_SUBMITTY.sh clean quick"
     echo -e "   ./INSTALL_SUBMITTY.sh clean test"
     echo -e "   ./INSTALL_SUBMITTY.sh clean skip_web_restart"
-    echo -e "   ./INSTALL_SUBMITTY.sh clear test  <test_case_1>"
-    echo -e "   ./INSTALL_SUBMITTY.sh clear test  <test_case_1> ... <test_case_n>"
+    echo -e "   ./INSTALL_SUBMITTY.sh clean test  <test_case_1>"
+    echo -e "   ./INSTALL_SUBMITTY.sh clean test  <test_case_1> ... <test_case_n>"
     echo -e "   ./INSTALL_SUBMITTY.sh test"
     echo -e "   ./INSTALL_SUBMITTY.sh test  <test_case_1>"
     echo -e "   ./INSTALL_SUBMITTY.sh test  <test_case_1> ... <test_case_n>"
@@ -54,7 +133,32 @@ if [[ "$#" -ge 1 && "$1" != "test" && "$1" != "clean" && "$1" != "test_rainbow"
     echo -e "   ./INSTALL_SUBMITTY.sh skip_web_restart"
     echo -e "   ./INSTALL_SUBMITTY.sh disable_shipper_worker"
     exit 1
-fi
+}
+
+for arg in "$@"; do
+    case "$arg" in
+        clean)
+            CLEAN=1 ;;
+        quick)
+            QUICK=1 ;;
+        test)
+            TEST=1 ;;
+        test_rainbow)
+            TEST_RAINBOW=1 ;;
+        skip_web_restart)
+            SKIP_WEB_RESTART=1 ;;
+        disable_shipper_worker)
+            DISABLE_SHIPPER_WORKER=1 ;;
+        *)
+            # check for test case names after "test"
+            if [[ "${TEST}" -eq 1 ]]; then
+                TEST_CASES+=("$arg")
+            else
+                print_usage
+            fi
+            ;;
+    esac
+done
 
 ########################################################################################################################
 ########################################################################################################################
@@ -83,57 +187,9 @@ if [ $? -eq 1 ]; then
 fi
 set -e
 
-
-################################################################################################################
-################################################################################################################
-# RUN THE SYSTEM AND DATABASE MIGRATIONS
-
 if [ "${IS_WORKER}" == 0 ]; then
-    echo -e 'Checking for system and database migrations'
-
-    mkdir -p "${SUBMITTY_INSTALL_DIR}/migrations"
-
-    rsync -rtz "${SUBMITTY_REPOSITORY}/migration/migrator/migrations" "${SUBMITTY_INSTALL_DIR}"
-    chown root:root "${SUBMITTY_INSTALL_DIR}/migrations"
-    chmod 550 -R "${SUBMITTY_INSTALL_DIR}/migrations"
-
-    python3 "${SUBMITTY_REPOSITORY}/migration/run_migrator.py" -e system -e master -e course migrate
+    bash "${SUBMITTY_REPOSITORY}/.setup/install_submitty/install_migrator.sh" "config=${SUBMITTY_CONFIG_DIR:?}"
 fi
-
-
-################################################################################################################
-################################################################################################################
-# VALIDATE DATABASE SUPERUSERS
-
-if [ "${IS_WORKER}" == 0 ]; then
-    DATABASE_FILE="$SUBMITTY_INSTALL_DIR/config/database.json"
-    DATABASE_HOST=$(jq -r '.database_host' $DATABASE_FILE)
-    DATABASE_PORT=$(jq -r '.database_port' $DATABASE_FILE)
-    GLOBAL_DBUSER=$(jq -r '.database_user' $DATABASE_FILE)
-    GLOBAL_DBUSER_PASS=$(jq -r '.database_password' $DATABASE_FILE)
-    COURSE_DBUSER=$(jq -r '.database_course_user' $DATABASE_FILE)
-
-    DB_CONN="-h ${DATABASE_HOST} -U ${GLOBAL_DBUSER}"
-    if [ ! -d "${DATABASE_HOST}" ]; then
-        DB_CONN="${DB_CONN} -p ${DATABASE_PORT}"
-    fi
-
-
-    CHECK=`PGPASSWORD=${GLOBAL_DBUSER_PASS} psql ${DB_CONN} -d submitty -tAc "SELECT rolsuper FROM pg_authid WHERE rolname='$GLOBAL_DBUSER'"`
-
-    if [ "$CHECK" == "f" ]; then
-        echo "ERROR: Database Superuser check failed! Master dbuser found to not be a superuser."
-        exit
-    fi
-
-    CHECK=`PGPASSWORD=${GLOBAL_DBUSER_PASS} psql ${DB_CONN} -d submitty -tAc "SELECT rolsuper FROM pg_authid WHERE rolname='$COURSE_DBUSER'"`
-
-    if [ "$CHECK" == "t" ]; then
-        echo "ERROR: Database Superuser check failed! Course dbuser found to be a superuser."
-        exit
-    fi
-fi
-
 
 ################################################################################################################
 ################################################################################################################
@@ -161,7 +217,25 @@ popd > /dev/null
 
 echo -e "\nBeginning installation of Submitty\n"
 
-/bin/bash "${SUBMITTY_REPOSITORY}/.setup/install_submitty/setup_directories.sh" "$@" "config=${SUBMITTY_CONFIG_DIR:?}"
+COMMAND=""
+if [ ${IS_WORKER} == 1 ]; then
+    COMMAND=--worker
+fi
+
+python3 "${SUBMITTY_REPOSITORY}/.setup/generate_configs.py" ${COMMAND}
+python3 "${SUBMITTY_REPOSITORY}/.setup/set_config_permissions.py" ${COMMAND}
+python3 "${SUBMITTY_REPOSITORY}/.setup/validate_configs.py" ${COMMAND}
+
+SETUP_ARGS=()
+if [[ "${CLEAN}" -eq 1 ]]; then
+    SETUP_ARGS+=("clean")
+    if [[ "${QUICK}" -eq 1 ]]; then
+        SETUP_ARGS+=("quick")
+    fi
+fi
+
+/bin/bash "${SUBMITTY_REPOSITORY}/.setup/install_submitty/setup_directories.sh" \
+    "${SETUP_ARGS[@]}" "config=${SUBMITTY_CONFIG_DIR:?}"
 
 ########################################################################################################################
 ########################################################################################################################
@@ -182,12 +256,18 @@ echo -e "\nBeginning installation of Submitty\n"
 
 nlohmann_dir="${SUBMITTY_INSTALL_DIR}/GIT_CHECKOUT/vendor/nlohmann/json"
 
-# If we don't already have a copy of this repository, check it out
-if [ ! -d "${nlohmann_dir}" ]; then
-    git clone --depth 1 "https://github.com/nlohmann/json.git" "${nlohmann_dir}"
+# Fetch a pinned release of the nlohmann C++ JSON library.
+# Re-fetch only when the pinned version (.setup/bin/versions.sh) changes.
+mkdir -p "${nlohmann_dir}"
+pushd "${nlohmann_dir}" > /dev/null
+if [[ ! -f VERSION || $(< VERSION) != "${nlohmann_json_Version}" ]]; then
+    rm -rf include single_include
+    wget -nv "https://github.com/nlohmann/json/releases/download/${nlohmann_json_Version}/include.zip" -O nlohmann_json.zip
+    unzip -o -q nlohmann_json.zip "include/*"
+    rm -f nlohmann_json.zip
+    echo "${nlohmann_json_Version}" > VERSION
 fi
-
-# TODO: We aren't checking / enforcing a specific/minimum version of this library...
+popd > /dev/null
 
 # Add read & traverse permissions for RainbowGrades and vendor repos
 find "${SUBMITTY_INSTALL_DIR}/GIT_CHECKOUT/vendor" -type d -exec chmod o+rx {} \;
@@ -218,7 +298,7 @@ rsync -tz "${SUBMITTY_REPOSITORY}/grading/allowed_autograding_commands_default.j
 # replace filling variables
 sed -i -e "s|__INSTALL__FILLIN__SUBMITTY_INSTALL_DIR__|$SUBMITTY_INSTALL_DIR|g" "${SUBMITTY_INSTALL_DIR}/config/allowed_autograding_commands_default.json"
 
-# # change permissions of allowed_autograding_commands_default.json
+# change permissions of allowed_autograding_commands_default.json
 chown "root":"root" "${SUBMITTY_INSTALL_DIR}/config/allowed_autograding_commands_default.json"
 chmod 644 "${SUBMITTY_INSTALL_DIR}/config/allowed_autograding_commands_default.json"
 
@@ -245,7 +325,7 @@ mkdir -p "${SUBMITTY_INSTALL_DIR}/src/grading/lib"
 pushd "${SUBMITTY_INSTALL_DIR}/src/grading/lib"
 cmake ..
 set +e
-make
+cmake --build . --parallel "$(nproc)"
 if [ "$?" -ne 0 ] ; then
     echo "ERROR BUILDING AUTOGRADING LIBRARY"
     exit 1
@@ -297,72 +377,6 @@ if [ "${IS_WORKER}" == 0 ]; then
         ${copy_cmd[@]} "${SUBMITTY_INSTALL_DIR}/GIT_CHECKOUT/Tutorial/" "${SUBMITTY_REPOSITORY}/site/cypress/fixtures/copy_of_tutorial/"
     fi
 fi
-########################################################################################################################
-########################################################################################################################
-# BUILD JUNIT TEST RUNNER (.java file) if Java is installed on the machine
-
-if [ -x "$(command -v javac)" ] &&
-   [ -d ${SUBMITTY_INSTALL_DIR}/java_tools/JUnit ]; then
-    echo -e "Build the junit test runner"
-
-    # copy the file from the repo
-    rsync -rtz "${SUBMITTY_REPOSITORY}/junit_test_runner/TestRunner.java" "${SUBMITTY_INSTALL_DIR}/java_tools/JUnit/TestRunner.java"
-
-    pushd "${SUBMITTY_INSTALL_DIR}/java_tools/JUnit" > /dev/null
-    # root will be owner & group of the source file
-    chown  root:root  TestRunner.java
-    # everyone can read this file
-    chmod  444 TestRunner.java
-
-    # compile the executable using the javac we use in the execute.cpp safelist
-    /usr/bin/javac -cp ./junit-4.12.jar TestRunner.java
-
-    # everyone can read the compiled file
-    chown root:root TestRunner.class
-    chmod 444 TestRunner.class
-
-    popd > /dev/null
-
-
-    # fix all java_tools permissions
-    chown -R "root:${COURSE_BUILDERS_GROUP}" "${SUBMITTY_INSTALL_DIR}/java_tools"
-    chmod -R 755                             "${SUBMITTY_INSTALL_DIR}/java_tools"
-else
-    echo -e "Skipping build of the junit test runner"
-fi
-
-
-#################################################################
-# DRMEMORY SETUP
-#################
-
-# Dr Memory is a tool for detecting memory errors in C++ programs (similar to Valgrind)
-
-# FIXME: Use of this tool should eventually be moved to containerized
-# autograding and not installed on the native primary and worker
-# machines by default
-
-# FIXME: DrMemory is initially installed in install_system.sh
-# It is re-installed here (on every Submitty software update) in case of version updates.
-
-pushd /tmp > /dev/null
-
-echo "Updating DrMemory..."
-
-rm -rf /tmp/DrMemory*
-wget https://github.com/DynamoRIO/drmemory/releases/download/${DRMEMORY_TAG}/DrMemory-Linux-${DRMEMORY_VERSION}.tar.gz -o /dev/null > /dev/null 2>&1
-tar -xpzf DrMemory-Linux-${DRMEMORY_VERSION}.tar.gz
-rsync --delete -a /tmp/DrMemory-Linux-${DRMEMORY_VERSION}/ ${SUBMITTY_INSTALL_DIR}/drmemory
-rm -rf /tmp/DrMemory*
-
-chown -R root:${COURSE_BUILDERS_GROUP} ${SUBMITTY_INSTALL_DIR}/drmemory
-chmod -R 755 ${SUBMITTY_INSTALL_DIR}/drmemory
-
-
-
-echo "...DrMemory ${DRMEMORY_TAG} update complete."
-
-popd > /dev/null
 
 
 ########################################################################################################################
@@ -582,6 +596,9 @@ installed_commit=$(jq '.installed_commit' /usr/local/submitty/config/version.jso
 most_recent_git_tag=$(jq '.most_recent_git_tag' /usr/local/submitty/config/version.json)
 echo -e "Completed installation of the Submitty version ${most_recent_git_tag//\"/}, commit ${installed_commit//\"/}\n"
 
+#restore files to be preserved
+preserve_files_restore
+
 ################################################################################################################
 ################################################################################################################
 # INSTALL SUBMITTY CRONTAB
@@ -752,7 +769,7 @@ fi
 
 # Restart php-fpm and apache
 if [ "${IS_WORKER}" == 0 ]; then
-    if [[ "$#" == 0 || ("$#" == 1 && "$1" != "skip_web_restart") || ("$#" -ge 2  && ("$1" != "skip_web_restart" && "$2" != "skip_web_restart")) ]]; then
+    if [[ "${SKIP_WEB_RESTART}" -eq 0 ]]; then
         PHP_VERSION=$(php -r 'print PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')
         echo -n "restarting php${PHP_VERSION}-fpm..."
         systemctl restart "php${PHP_VERSION}-fpm"
@@ -789,7 +806,7 @@ done
 # INSTALL TEST SUITE if not in worker mode
 if [ "${IS_WORKER}" == 0 ]; then
     # one optional argument installs & runs test suite
-    if [[ "$#" -ge 1 && "$1" == "test" ]]; then
+    if [[ "${TEST}" -eq 1 ]]; then
 
         # copy the directory tree and replace variables
         echo -e "Install Autograding Test Suite..."
@@ -801,10 +818,8 @@ if [ "${IS_WORKER}" == 0 ]; then
 
         echo -e "\nRun Autograding Test Suite...\n"
 
-        # pop the first argument from the list of command args
-        shift
         # pass any additional command line arguments to the run test suite
-        python3 "${SUBMITTY_INSTALL_DIR}/test_suite/integrationTests/run.py" "$@"
+        python3 "${SUBMITTY_INSTALL_DIR}/test_suite/integrationTests/run.py" "${TEST_CASES[@]}"
 
         echo -e "\nCompleted Autograding Test Suite\n"
     fi
@@ -816,7 +831,7 @@ fi
 # INSTALL RAINBOW GRADES TEST SUITE if not in worker mode
 if [ "${IS_WORKER}" == 0 ]; then
     # one optional argument installs & runs test suite
-    if [[ "$#" -ge 1 && "$1" == "test_rainbow" ]]; then
+    if [[ "${TEST_RAINBOW}" -eq 1 ]]; then
 
         # copy the directory tree and replace variables
         echo -e "Install Rainbow Grades Test Suite..."
@@ -829,12 +844,9 @@ if [ "${IS_WORKER}" == 0 ]; then
         rainbow_counter=0
         rainbow_total=0
 
-        # pop the first argument from the list of command args
-        shift
-        # pass any additional command line arguments to the run test suite
         rainbow_total=$((rainbow_total+1))
         set +e
-        python3 "${SUBMITTY_INSTALL_DIR}/test_suite/rainbowGrades/test_sample.py"  "$@"
+        python3 "${SUBMITTY_INSTALL_DIR}/test_suite/rainbowGrades/test_sample.py"
 
         if [[ "$?" -ne 0 ]]; then
             echo -e "\n[ FAILED ] sample test\n"
@@ -852,10 +864,12 @@ fi
 ################################################################################################################
 # confirm permissions on the repository (to allow push updates from primary to worker)
 if [ "${IS_WORKER}" == 1 ]; then
-    # the supervisor user/group must have write access on the worker machine
-    echo -e -n "Update/confirm worker repository permissions"
-    chgrp -R "${SUPERVISOR_USER}" "${SUBMITTY_REPOSITORY}"
-    chmod -R g+rw "${SUBMITTY_REPOSITORY}"
+    if [ "${IS_VAGRANT}" == 0 ]; then
+        # the supervisor user/group must have write access on the worker machine
+        echo -e -n "Update/confirm worker repository permissions"
+        chgrp -R "${SUPERVISOR_USER}" "${SUBMITTY_REPOSITORY}"
+        chmod -R g+rw "${SUBMITTY_REPOSITORY}"
+    fi
 else
     if [ "${IS_VAGRANT}" == 0 ]; then
         # in order to update the submitty source files on the worker machines
@@ -872,7 +886,7 @@ else
     sudo -H -u "${DAEMON_USER}" python3 -u "${SUBMITTY_INSTALL_DIR}/sbin/shipper_utils/update_and_install_workers.py"
     echo -e -n "Done updating workers and installing docker images\n\n"
 
-    if [[ "$#" -ge 1 && "$1" == "disable_shipper_worker" ]]; then
+    if [[ "${DISABLE_SHIPPER_WORKER}" -eq 1 ]]; then
         echo -e -n "WARNING: Autograding shipper and worker are disabled\n\n"
     else
         # Restart the shipper & workers

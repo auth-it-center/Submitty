@@ -4,6 +4,9 @@ on:
   issue_comment:
     types: [created]
 
+permissions:
+  contents: read
+
 jobs:
   firstIssueReply:
     # Only when it is an issue rather than a PR
@@ -16,16 +19,16 @@ jobs:
 
     steps:
       - name: Checkout main repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Check for existing bot comments
         id: check-comments
         run: |
-          ISSUE_NUMBER=${{ github.event.issue.number }}
           BOT_COMMENT_EXISTS=$(gh issue view "$ISSUE_NUMBER" --json comments --jq '.comments[].body' | grep -q "Hi @$USERNAME," && echo "true" || echo "false")
           echo "bot_comment_exists=$BOT_COMMENT_EXISTS" >> $GITHUB_ENV
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
           USERNAME: ${{ github.event.comment.user.login }}
 
       - name: First issue reply

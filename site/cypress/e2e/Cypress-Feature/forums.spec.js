@@ -220,7 +220,7 @@ const submitCreateThreadRequest = (title, content) => {
         'markdown_status': 0,
         'lock_thread_date': '',
         'thread_post_content': content,
-        'cat[]': '2', // "Question" category
+        'cat[]': '2', // "Homework Help" category
         'expirationDate': new Date(Date.now() + 1000 * 60 * 60 * 24 * 7).toISOString(), // 1 week from now
         'thread_status': -1,
     };
@@ -340,6 +340,56 @@ const expectPostHierarchy = (post, expected) => {
     }
 };
 
+describe('Should update an empty forum through the WebSocket handler', () => {
+    it('Should insert the first thread received through the WebSocket handler', () => {
+        cy.login('instructor2');
+        cy.visit(['testing', 'forum']);
+        cy.window().its('socketClient').should('exist').then((socketClient) => {
+            socketClient.removeClientListeners();
+            socketClient.client.close(1000);
+        });
+        cy.window().its('jQuery.active').should('eq', 0);
+        cy.get('.thread_box_link').should('not.exist');
+        cy.get('.thread-list-empty').should('contain', 'No threads found.');
+        cy.get('#thread_list .thread-list-insertion-point').should('exist');
+
+        const threadId = 1;
+        const nextPage = buildUrl(['testing', 'forum', 'threads', threadId], true);
+        const thread = `
+            <a href="${nextPage}"
+               class="thread_box_link"
+               data-thread_id="${threadId}"
+               data-thread_title="${title5}"
+               id="thread_box_link_${threadId}">
+                <div class="thread_box">
+                    <span data-testid="thread-list-item">${title5}</span>
+                    <div class="thread-content">${content4}</div>
+                    <span class="label_forum">Homework Help</span>
+                </div>
+            </a>
+        `;
+
+        cy.intercept('POST', '**/forum/threads/single', {
+            headers: { 'content-type': 'text/plain' },
+            body: JSON.stringify({ status: 'success', data: thread }),
+        }).as('fetchFirstThread');
+
+        cy.window().then((win) => {
+            win.socketNewOrEditThreadHandler(threadId);
+        });
+        cy.wait('@fetchFirstThread');
+
+        cy.get(`#thread_box_link_${threadId}`).should('have.length', 1).and('be.visible').within(() => {
+            cy.get('[data-testid="thread-list-item"]').should('contain', title5);
+            cy.get('.thread-content').should('contain', content4);
+            cy.get('.label_forum').should('contain', 'Homework Help');
+        });
+        cy.get(`#thread_box_link_${threadId}`).should('have.attr', 'href', nextPage);
+        cy.get('.thread-list-empty').should('not.exist');
+        cy.window().its('jQuery.active').should('eq', 0);
+    });
+});
+
 describe('Should test WebSocket functionality', () => {
     beforeEach(() => {
         cy.login('instructor');
@@ -358,7 +408,7 @@ describe('Should test WebSocket functionality', () => {
             cy.get('@thread').within(() => {
                 cy.get('[data-testid="thread-list-item"]').should('contain', title5);
                 cy.get('.thread-content').should('contain', content4);
-                cy.get('.label_forum').should('contain', 'Question');
+                cy.get('.label_forum').should('contain', 'Homework Help');
             });
 
             // Verify the server response data matches the DOM components
@@ -589,10 +639,28 @@ describe('Should test Search functionality', () => {
     it('Should find posts containing \'Homework 1\'', () => {
         cy.get('[data-testid="search-content-input"]').type('Homework 1');
         cy.get('[data-testid="search-submit"]').click();
-        cy.get('[data-testid="search-result-table"]').should('exist');
-        cy.get('[data-testid="search-result-table"]').should('not.be.empty');
-        cy.get('[data-testid="search-result-table"]').contains('Homework 1 not running');
-        cy.get('[data-testid="search-result-table"]').contains('Homework 1 print clarification');
-        cy.get('[data-testid="search-result-table"]').contains('Homework 1 has been posted on the course website.');
+        cy.get('#thread_list').contains('Homework 1 not running');
+        cy.get('#thread_list').contains('Homework 1 print clarification');
+        cy.get('#thread_list').contains('Homework 1 has been posted on the course website.');
+        cy.get('#thread_list').contains('Python Tutorials').should('not.exist');
+        cy.get('#thread_list').contains('Course syllabus').should('not.exist');
+
+        cy.go('back');
+        cy.get('#thread_list').contains('Homework 1 not running');
+        cy.get('#thread_list').contains('Homework 1 print clarification');
+        cy.get('#thread_list').contains('Homework 1 has been posted on the course website.');
+        cy.get('#thread_list').contains('Python Tutorials');
+        cy.get('#thread_list').contains('Course syllabus');
+    });
+
+    it('Should clear the search input when Clear Filters is clicked', () => {
+        cy.get('[data-testid="search-content-input"]').type('Homework 1');
+        cy.get('[data-testid="search-submit"]').click();
+        cy.get('#thread_list').contains('Python Tutorials').should('not.exist');
+
+        cy.get('#clear_filter_button').click();
+        cy.get('[data-testid="search-content-input"]').should('have.value', '');
+        cy.get('#thread_list').contains('Python Tutorials');
+        cy.get('#thread_list').contains('Course syllabus');
     });
 });

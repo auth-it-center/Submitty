@@ -16,6 +16,7 @@ __pycache__/
 *.out
 *.synctex.gz
 .coverage
+.nyc_output/
 coverage.xml
 
 
@@ -48,6 +49,7 @@ composer.phar
 Pipfile
 Pipfile.lock
 .phpunit.result.cache
+/site/.phpunit.cache/
 
 .env
 .github_actions_ci_flag

@@ -55,10 +55,22 @@ class RainbowCustomizationJSON extends AbstractModel {
      * @var object[]
      */
     private array $warning = [];
+    /**
+     * @var bool
+     */
+    private bool $extra_credit = false;
+    /**
+     * @var bool
+     */
+    private bool $show_gradeable_configuration = false;
+    /**
+     * @var bool
+     */
+    private bool $customize_show_notes = false;
 
     // The order of allowed_display and allowed_display_description has to match
     const allowed_display = ['grade_summary', 'grade_details', 'exam_seating', 'section',
-        'messages', 'warning', 'final_grade', 'final_cutoff', 'instructor_notes', 'display_rank_to_individual'];
+        'messages', 'warning', 'final_grade', 'final_cutoff', 'instructor_notes', 'display_rank_to_individual', 'date_registered'];
 
     const allowed_display_description = [
         "Display a column(row) for each gradeable bucket on the syllabus.", //grade_summary
@@ -70,7 +82,8 @@ class RainbowCustomizationJSON extends AbstractModel {
         "Configure cutoffs and display the student's final term letter grade.", //final_grade
         "Display the histogram of average overall grade and count of students with each final term letter grade.", //final_cutoff
         "Optional message for specific students that are only visible on the instructor gradebook, these messages are never displayed to students.", //instructor_notes
-        "Display each student's rank in the course to themselves." //display_rank_to_individual
+        "Display each student's rank in the course to themselves.", //display_rank_to_individual
+        "Display the date each student was added to the course, useful for courses using self-registration." //date_registered
     ];
 
 
@@ -263,6 +276,18 @@ class RainbowCustomizationJSON extends AbstractModel {
         if (isset($json->warning)) {
             $this->warning = $json->warning;
         }
+
+        if (isset($json->extra_credit)) {
+            $this->extra_credit = $json->extra_credit;
+        }
+
+        if (isset($json->show_gradeable_configuration)) {
+            $this->show_gradeable_configuration = $json->show_gradeable_configuration;
+        }
+
+        if (isset($json->customize_show_notes)) {
+            $this->customize_show_notes = $json->customize_show_notes;
+        }
     }
 
     /**
@@ -371,6 +396,60 @@ class RainbowCustomizationJSON extends AbstractModel {
      */
     public function getMessages() {
         return $this->messages;
+    }
+
+    /**
+     * Get extra credit setting
+     *
+     * @return bool
+     */
+    public function getExtraCredit(): bool {
+        return $this->extra_credit;
+    }
+
+    /**
+     * Set extra credit setting
+     *
+     * @param bool $extra_credit
+     */
+    public function setExtraCredit(bool $extra_credit): void {
+        $this->extra_credit = $extra_credit;
+    }
+
+    /**
+     * Get show gradeable configuration setting
+     *
+     * @return bool
+     */
+    public function getShowGradeableConfiguration(): bool {
+        return $this->show_gradeable_configuration;
+    }
+
+    /**
+     * Set show gradeable configuration setting
+     *
+     * @param bool $show_gradeable_configuration
+     */
+    public function setShowGradeableConfiguration(bool $show_gradeable_configuration): void {
+        $this->show_gradeable_configuration = $show_gradeable_configuration;
+    }
+
+    /**
+     * Get customize show notes setting
+     *
+     * @return bool
+     */
+    public function getCustomizeShowNotes(): bool {
+        return $this->customize_show_notes;
+    }
+
+    /**
+     * Set customize show notes setting
+     *
+     * @param bool $customize_show_notes
+     */
+    public function setCustomizeShowNotes(bool $customize_show_notes): void {
+        $this->customize_show_notes = $customize_show_notes;
     }
 
 

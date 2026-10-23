@@ -97,7 +97,15 @@ class ConfigTester extends \PHPUnit\Framework\TestCase {
             'user_create_account' => false,
             "duck_special_effects" => false,
             "default_locale" => "default",
-            "user_id_requirements" => []
+            "user_id_requirements" => [],
+            "password_requirements" => [
+                "min_length" => 12,
+                "max_length" => 72,
+                "require_uppercase" => true,
+                "require_lowercase" => true,
+                "require_numbers" => true,
+                "require_special_chars" => true
+            ]
         ];
         $config = array_replace($config, $extra);
         FileUtils::writeJsonFile(FileUtils::joinPaths($this->config_path, "submitty.json"), $config);
@@ -138,6 +146,7 @@ class ConfigTester extends \PHPUnit\Framework\TestCase {
                 'seek_message_enabled'           => false,
                 'seek_message_instructions'      => '',
                 'polls_enabled'                  => false,
+                'submission_clustering_enabled'  => false,
                 'chat_enabled'                   => false
             ],
             'feature_flags' => [
@@ -315,6 +324,7 @@ class ConfigTester extends \PHPUnit\Framework\TestCase {
                     'seek_message_enabled'           => false,
                     'seek_message_instructions'      => '',
                     'polls_enabled'                  => false,
+                    'submission_clustering_enabled'  => false,
                     'chat_enabled'                   => false
                 ],
                 'feature_flags' => []
@@ -336,6 +346,14 @@ class ConfigTester extends \PHPUnit\Framework\TestCase {
             'system_message' => 'Some system message',
             'user_create_account' => false,
             'user_id_requirements' => [],
+            'password_requirements' => [
+                'min_length' => 12,
+                'max_length' => 72,
+                'require_uppercase' => true,
+                'require_lowercase' => true,
+                'require_numbers' => true,
+                'require_special_chars' => true
+            ],
             'accepted_emails' => null,
             'secret_session' => 'LIW0RT5XAxOn2xjVY6rrLTcb6iacl4IDNRyPw58M0Kn0haQbHtNvPfK18xpvpD93',
             'email_enabled' => true,
@@ -350,13 +368,15 @@ class ConfigTester extends \PHPUnit\Framework\TestCase {
             'seek_message_enabled'           => false,
             'seek_message_instructions'      => '',
             'polls_enabled'                  => false,
+            'submission_clustering_enabled'  => false,
             'chat_enabled' => false,
             'feature_flags' => [],
             'submitty_install_path' => $this->temp_dir,
-            'date_time_format' => ['modified' => false],
+            'submitty_data_path' => $this->temp_dir,
             "default_locale" => "default",
             "locale" => ['modified' => false],
             'course_material_file_upload_limit_mb' => 100,
+            'max_course_material_storage_mb' => 1000,
         ];
         $actual = $config->toArray();
 
@@ -674,7 +694,7 @@ class ConfigTester extends \PHPUnit\Framework\TestCase {
     }
 
     public static function ldapOptionsDataProvider() {
-        return [['url'], ['uid'], ['bind_dn']];
+        return [['url'], ['service_dn'], ['service_pw'], ['pwd_field'], ['base_dn'], ['filter']];
     }
 
     /**
@@ -684,14 +704,12 @@ class ConfigTester extends \PHPUnit\Framework\TestCase {
         $extra = [
             'authentication_method' => 'LdapAuthentication',
             'ldap_options' => [
-                # 'uid' => 'uid',
-                # 'bind_dn' => 'ou=users',
                 'url' => 'ldap://localhost',
-                'service_dn',
-                'service_pw',
-                'pwd_field',
-                'base_dn',
-                'filter',
+                'service_dn' => 'uid=service,ou=users,dc=vagrant,dc=local',
+                'service_pw' => 'service_password',
+                'pwd_field' => 'userPassword',
+                'base_dn' => 'ou=users,dc=vagrant,dc=local',
+                'filter' => '(uid={uid})',
             ],
         ];
 

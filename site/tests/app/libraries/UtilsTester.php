@@ -10,6 +10,26 @@ use tests\BaseUnitTest;
 class UtilsTester extends BaseUnitTest {
     use \phpmock\phpunit\PHPMock;
 
+    private function createTestPdf(): string {
+        $pdf_path = tempnam(sys_get_temp_dir(), 'submitty_pdf_');
+        file_put_contents($pdf_path, <<<PDF
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Count 1 /Kids [3 0 R] >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] >>
+endobj
+trailer
+<< /Root 1 0 R >>
+%%EOF
+PDF);
+        return $pdf_path;
+    }
+
     public function testPad1() {
         $this->assertEquals("00", Utils::pad("0"));
     }
@@ -37,18 +57,61 @@ class UtilsTester extends BaseUnitTest {
     }
 
     public function testValidPassword() {
+        $requirements = [
+            'min_length' => 12,
+            'max_length' => 72,
+            'require_uppercase' => true,
+            'require_lowercase' => true,
+            'require_numbers' => true,
+            'require_special_chars' => true
+        ];
         $good_password = 'GoodPassword#123';
-        $this->assertTrue(Utils::isValidPassword($good_password));
+        $this->assertTrue(Utils::isValidPassword($good_password, $requirements));
         $bad_password_length = 'Bad#123';
-        $this->assertFalse(Utils::isValidPassword($bad_password_length));
+        $this->assertFalse(Utils::isValidPassword($bad_password_length, $requirements));
         $bad_password_numbers = 'BadPasswordWithoutNumbers@';
-        $this->assertFalse(Utils::isValidPassword($bad_password_numbers));
+        $this->assertFalse(Utils::isValidPassword($bad_password_numbers, $requirements));
         $bad_password_special = 'BadPasswordWithoutSpecialCharacter123';
-        $this->assertFalse(Utils::isValidPassword($bad_password_special));
+        $this->assertFalse(Utils::isValidPassword($bad_password_special, $requirements));
         $bad_password_capital = 'badpasswordwithoutcapital#123';
-        $this->assertFalse(Utils::isValidPassword($bad_password_capital));
+        $this->assertFalse(Utils::isValidPassword($bad_password_capital, $requirements));
         $bad_password_lowercase = 'BADPASSWORDWITHOUTLOWERCASE#123';
-        $this->assertFalse(Utils::isValidPassword($bad_password_lowercase));
+        $this->assertFalse(Utils::isValidPassword($bad_password_lowercase, $requirements));
+    }
+
+    public function testValidPasswordWithCustomRequirements() {
+        $requirements = [
+            'min_length' => 8,
+            'max_length' => 72,
+            'require_uppercase' => false,
+            'require_lowercase' => true,
+            'require_numbers' => true,
+            'require_special_chars' => false
+        ];
+        $this->assertTrue(Utils::isValidPassword('simple8pass1', $requirements));
+        $this->assertTrue(Utils::isValidPassword('alllower1', $requirements));
+        $this->assertFalse(Utils::isValidPassword('short1', $requirements));
+        $this->assertFalse(Utils::isValidPassword('NOLOWERCASE1', [
+            'min_length' => 8,
+            'max_length' => 72,
+            'require_uppercase' => false,
+            'require_lowercase' => true,
+            'require_numbers' => false,
+            'require_special_chars' => false
+        ]));
+    }
+
+    public function testValidPasswordMaxLength() {
+        $requirements = [
+            'min_length' => 1,
+            'max_length' => 10,
+            'require_uppercase' => false,
+            'require_lowercase' => false,
+            'require_numbers' => false,
+            'require_special_chars' => false
+        ];
+        $this->assertTrue(Utils::isValidPassword('short', $requirements));
+        $this->assertFalse(Utils::isValidPassword('toolongpassword', $requirements));
     }
 
     public function testAcceptedEmail() {
@@ -245,6 +308,56 @@ class UtilsTester extends BaseUnitTest {
 
     public function testCheckUploadedImageInvalidId() {
         $this->assertFalse(Utils::checkUploadedImageFile('invalid'));
+    }
+
+    public function testCheckUploadedImageOrPdfFileWithPdf() {
+        $pdf_path = $this->createTestPdf();
+        try {
+            $_FILES['test'] = [
+                'name' => ['test.pdf'],
+                'tmp_name' => [$pdf_path],
+                'type' => ['application/pdf'],
+                'error' => [UPLOAD_ERR_OK],
+                'size' => [123]
+            ];
+            $this->assertTrue(Utils::checkUploadedImageOrPdfFile('test'));
+        }
+        finally {
+            $_FILES = [];
+            unlink($pdf_path);
+        }
+    }
+
+    public function testCheckUploadedImageOrPdfFileInvalidFile() {
+        try {
+            $_FILES['test'] = [
+                'name' => ['test.txt'],
+                'tmp_name' => [__TEST_DATA__ . '/test.txt'],
+                'type' => ['text/plain'],
+                'error' => [UPLOAD_ERR_OK],
+                'size' => [123]
+            ];
+            $this->assertFalse(Utils::checkUploadedImageOrPdfFile('test'));
+        }
+        finally {
+            $_FILES = [];
+        }
+    }
+
+    public function testCheckUploadedImageOrPdfFileWithImage() {
+        try {
+            $_FILES['test'] = [
+                'name' => ['test_image.png'],
+                'tmp_name' => [__TEST_DATA__ . '/images/test_image.png'],
+                'type' => ['image/png'],
+                'error' => [UPLOAD_ERR_OK],
+                'size' => [123]
+            ];
+            $this->assertTrue(Utils::checkUploadedImageOrPdfFile('test'));
+        }
+        finally {
+            $_FILES = [];
+        }
     }
 
     public static function comparableNullableGtProvider() {
@@ -716,5 +829,247 @@ class UtilsTester extends BaseUnitTest {
             ["αβ", "γδ", "εf", "g"],
             Utils::mb_str_split("αβγδεfg", 2)
         );
+    }
+
+    public function testIsAcceptedUserIdLengthTooShort() {
+        $requirements = ['min_length' => 5, 'max_length' => 10];
+        $this->assertFalse(Utils::isAcceptedUserId($requirements, 'abc', 'Given', 'Family', 'test@example.com'));
+    }
+
+    public function testIsAcceptedUserIdLengthTooLong() {
+        $requirements = ['min_length' => 1, 'max_length' => 3];
+        $this->assertFalse(Utils::isAcceptedUserId($requirements, 'abcdefg', 'Given', 'Family', 'test@example.com'));
+    }
+
+    public function testIsAcceptedUserIdAnyUserId() {
+        $requirements = ['min_length' => 1, 'max_length' => 20, 'any_user_id' => true];
+        $this->assertTrue(Utils::isAcceptedUserId($requirements, 'anything', 'Given', 'Family', 'test@example.com'));
+    }
+
+    public function testIsAcceptedUserIdNameMatchGivenFirst() {
+        $requirements = [
+            'min_length' => 1,
+            'max_length' => 20,
+            'any_user_id' => false,
+            'require_name' => true,
+            'name_requirements' => ['given_first' => 'true', 'given_name' => 4, 'family_name' => 4],
+        ];
+        $this->assertTrue(Utils::isAcceptedUserId($requirements, 'johnsmit', 'John', 'Smith', 'test@example.com'));
+        $this->assertFalse(Utils::isAcceptedUserId($requirements, 'xxxxxxxx', 'John', 'Smith', 'test@example.com'));
+    }
+
+    public function testIsAcceptedUserIdNameMatchFamilyFirst() {
+        $requirements = [
+            'min_length' => 1,
+            'max_length' => 20,
+            'any_user_id' => false,
+            'require_name' => true,
+            'name_requirements' => ['given_first' => 'false', 'given_name' => 4, 'family_name' => 4],
+        ];
+        $this->assertTrue(Utils::isAcceptedUserId($requirements, 'smitjohn', 'John', 'Smith', 'test@example.com'));
+    }
+
+    public function testIsAcceptedUserIdEmailWholeEmail() {
+        $requirements = [
+            'min_length' => 1,
+            'max_length' => 40,
+            'any_user_id' => false,
+            'require_name' => false,
+            'require_email' => true,
+            'email_requirements' => ['whole_email' => true, 'whole_prefix' => false, 'prefix_count' => 0],
+        ];
+        $this->assertTrue(
+            Utils::isAcceptedUserId($requirements, 'test@example.com', 'Given', 'Family', 'test@example.com')
+        );
+        $this->assertFalse(
+            Utils::isAcceptedUserId($requirements, 'nope@example.com', 'Given', 'Family', 'test@example.com')
+        );
+    }
+
+    public function testIsAcceptedUserIdEmailWholePrefix() {
+        $requirements = [
+            'min_length' => 1,
+            'max_length' => 40,
+            'any_user_id' => false,
+            'require_name' => false,
+            'require_email' => true,
+            'email_requirements' => ['whole_email' => false, 'whole_prefix' => true, 'prefix_count' => 0],
+        ];
+        $this->assertTrue(Utils::isAcceptedUserId($requirements, 'test', 'Given', 'Family', 'test@example.com'));
+        $this->assertFalse(Utils::isAcceptedUserId($requirements, 'nope', 'Given', 'Family', 'test@example.com'));
+    }
+
+    public function testIsAcceptedUserIdEmailPrefixCount() {
+        $requirements = [
+            'min_length' => 1,
+            'max_length' => 40,
+            'any_user_id' => false,
+            'require_name' => false,
+            'require_email' => true,
+            'email_requirements' => ['whole_email' => false, 'whole_prefix' => false, 'prefix_count' => 3],
+        ];
+        $this->assertTrue(Utils::isAcceptedUserId($requirements, 'tes', 'Given', 'Family', 'test@example.com'));
+        $this->assertFalse(Utils::isAcceptedUserId($requirements, 'xyz', 'Given', 'Family', 'test@example.com'));
+    }
+
+    public function testIsAcceptedUserIdNoRequirementsMatch() {
+        $requirements = [
+            'min_length' => 1,
+            'max_length' => 40,
+            'any_user_id' => false,
+            'require_name' => false,
+            'require_email' => false,
+        ];
+        $this->assertFalse(Utils::isAcceptedUserId($requirements, 'test', 'Given', 'Family', 'test@example.com'));
+    }
+
+    public function testAcceptedEmailNoAtSign() {
+        $core = $this->createMockCore(['accepted_emails' => ['gmail.com']]);
+        $reqs = $core->getConfig()->getAcceptedEmails();
+        $this->assertFalse(Utils::isAcceptedEmail($reqs, 'not_an_email'));
+    }
+
+    public function testGenerateVerificationCodeDebug() {
+        $core = $this->createMockCore(['use_mock_time' => true]);
+        $result = Utils::generateVerificationCode($core, true);
+        $this->assertEquals('00000000', $result['code']);
+        $this->assertInstanceOf(\DateTime::class, $result['expiration']);
+    }
+
+    public function testGenerateVerificationCodeNotDebug() {
+        $core = $this->createMockCore(['use_mock_time' => true]);
+        $result = Utils::generateVerificationCode($core, false);
+        $this->assertEquals(32, strlen($result['code']));
+    }
+
+    public function testCheckUploadedImageOrPdfFileInvalidId() {
+        $this->assertFalse(Utils::checkUploadedImageOrPdfFile('invalid'));
+    }
+
+    public function testGetAutoFillDataAppendNumericId() {
+        $details = [
+            'user_id' => "test",
+            'anon_id' => "TestAnon",
+            'user_numeric_id' => '123456789',
+            'user_password' => "test",
+            'user_givenname' => "User",
+            'user_preferred_givenname' => null,
+            'user_familyname' => "Tester",
+            'user_preferred_familyname' => null,
+            'user_pronouns' => '',
+            'display_pronouns' => false,
+            'user_email' => "test@example.com",
+            'user_email_secondary' => "test@exampletwo.com",
+            'user_email_secondary_notify' => false,
+            'user_group' => User::GROUP_STUDENT,
+            'registration_section' => 1,
+            'rotating_section' => null,
+            'manual_registration' => false,
+            'grading_registration_sections' => [1, 2]
+        ];
+
+        $core = new Core();
+        $users = [new User($core, $details)];
+
+        $expected = '[{"value":"test","label":"User Tester <test> <123456789>"}]';
+        $this->assertEquals($expected, Utils::getAutoFillData($users, null, true));
+    }
+
+    public function testStripComments() {
+        $code = "int main() { // line comment\n/* block\ncomment */ return 0; }";
+        $expected = "int main() { \n return 0; }";
+        $this->assertEquals($expected, Utils::stripComments($code));
+    }
+
+    public function testEscapeDoubleQuotes() {
+        $this->assertEquals('ab\"cd\"ef', Utils::escapeDoubleQuotes('ab"cd"ef'));
+    }
+
+    public function testConvertBooleansDefaultFalse() {
+        $this->assertFalse(Utils::getBooleanValue([]));
+        $this->assertFalse(Utils::getBooleanValue(null));
+    }
+
+    public static function webSocketPageIdentifierProvider() {
+        return [
+            'missing params' => [['page' => 'discussion_forum', 'term' => 's26'], null],
+            'discussion_forum' => [
+                ['page' => 'discussion_forum', 'term' => 's26', 'course' => 'cs101'],
+                's26-cs101-discussion_forum'
+            ],
+            'office_hours_queue' => [
+                ['page' => 'office_hours_queue', 'term' => 's26', 'course' => 'cs101'],
+                's26-cs101-office_hours_queue'
+            ],
+            'chatrooms with id' => [
+                ['page' => 'chatrooms', 'term' => 's26', 'course' => 'cs101', 'chatroom_id' => '5'],
+                's26-cs101-chatrooms-5'
+            ],
+            'chatrooms all_chatrooms' => [
+                [
+                    'page' => 'chatrooms', 'term' => 's26', 'course' => 'cs101',
+                    'all_chatrooms' => true, 'chatroom_id' => '5'
+                ],
+                's26-cs101-chatrooms'
+            ],
+            'chatrooms no id' => [
+                ['page' => 'chatrooms', 'term' => 's26', 'course' => 'cs101'],
+                's26-cs101-chatrooms'
+            ],
+            'polls_index' => [
+                ['page' => 'polls_index', 'term' => 's26', 'course' => 'cs101'],
+                's26-cs101-polls_index'
+            ],
+            'polls missing poll_id' => [
+                ['page' => 'polls', 'term' => 's26', 'course' => 'cs101', 'instructor' => 'true'],
+                null
+            ],
+            'polls missing instructor' => [
+                ['page' => 'polls', 'term' => 's26', 'course' => 'cs101', 'poll_id' => '1'],
+                null
+            ],
+            'polls instructor true' => [
+                ['page' => 'polls', 'term' => 's26', 'course' => 'cs101', 'poll_id' => '1', 'instructor' => 'true'],
+                's26-cs101-polls-1-instructor'
+            ],
+            'polls instructor false' => [
+                ['page' => 'polls', 'term' => 's26', 'course' => 'cs101', 'poll_id' => '1', 'instructor' => 'false'],
+                's26-cs101-polls-1-student'
+            ],
+            'grade_inquiry missing gradeable_id' => [
+                ['page' => 'grade_inquiry', 'term' => 's26', 'course' => 'cs101', 'submitter_id' => 'bob'],
+                null
+            ],
+            'grade_inquiry missing submitter_id' => [
+                ['page' => 'grade_inquiry', 'term' => 's26', 'course' => 'cs101', 'gradeable_id' => 'hw1'],
+                null
+            ],
+            'grade_inquiry complete' => [
+                [
+                    'page' => 'grade_inquiry', 'term' => 's26', 'course' => 'cs101',
+                    'gradeable_id' => 'hw1', 'submitter_id' => 'bob'
+                ],
+                's26-cs101-grade_inquiry-hw1_bob'
+            ],
+            'grading missing gradeable_id' => [
+                ['page' => 'grading', 'term' => 's26', 'course' => 'cs101'],
+                null
+            ],
+            'grading complete' => [
+                ['page' => 'grading', 'term' => 's26', 'course' => 'cs101', 'gradeable_id' => 'hw1'],
+                's26-cs101-grading-hw1'
+            ],
+            'unknown page' => [
+                ['page' => 'unknown', 'term' => 's26', 'course' => 'cs101'],
+                null
+            ],
+        ];
+    }
+
+    /**
+     * @dataProvider webSocketPageIdentifierProvider
+     */
+    public function testBuildWebSocketPageIdentifier($params, $expected) {
+        $this->assertEquals($expected, Utils::buildWebSocketPageIdentifier($params));
     }
 }

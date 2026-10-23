@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
 
+WORKER=0
+if [ "$1" == "worker" ]; then
+    WORKER=1
+fi
+
 # this script must be run by root or sudo
 if [[ "$UID" -ne "0" ]] ; then
     echo "ERROR: This script must be run by root or sudo"
     exit
 fi
 
-if [ ${DEV_VM} == 1 ]; then
+if [ "${DEV_VM}" == 1 ]; then
     export SUBMISSION_URL='http://localhost:1511'
     export SUBMISSION_PORT=1511
     export DATABASE_PORT=16442
@@ -51,12 +56,15 @@ apt-get install -qqy libpam-passwdqc
 # the worker/threaded mode instead)
 
 apt-get install -qqy ssh sshpass unzip
-apt-get install -qqy postgresql-14
-apt-get install -qqy apache2 apache2-suexec-custom libapache2-mod-authnz-external libapache2-mod-authz-unixgroup libapache2-mod-wsgi-py3
-apt-get install -qqy php8.1 php8.1-cli php8.1-fpm php8.1-curl php8.1-pgsql php8.1-zip php8.1-mbstring php8.1-xml php8.1-ds php8.1-imagick php8.1-intl
 
-if [ ${DEV_VM} == 1 ]; then
-    apt-get install -qqy php8.1-xdebug php8.1-ldap php8.1-sqlite3
+if [ ${WORKER} == 0 ]; then
+    apt-get install -qqy postgresql-14
+    apt-get install -qqy apache2 apache2-suexec-custom libapache2-mod-authnz-external libapache2-mod-authz-unixgroup libapache2-mod-wsgi-py3
+    apt-get install -qqy php8.2-cli php8.2-fpm php8.2-curl php8.2-pgsql php8.2-zip php8.2-mbstring php8.2-xml php8.2-ds php8.2-imagick php8.2-intl
+fi
+
+if [ "${DEV_VM}" == 1 ]; then
+    apt-get install -qqy php8.2-xdebug php8.2-ldap php8.2-sqlite3
 fi
 
 #Add the scrot screenshotting program
@@ -74,13 +82,16 @@ jq libseccomp-dev libseccomp2 seccomp junit flex bison poppler-utils
 
 apt-get install -qqy ninja-build
 
-# NodeJS
-NODE_MAJOR=20
-curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | sudo gpg --batch --yes --dearmor -o /etc/apt/keyrings/nodesource.gpg
-chmod o+r /etc/apt/keyrings/nodesource.gpg
-echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_$NODE_MAJOR.x nodistro main" | sudo tee /etc/apt/sources.list.d/nodesource.list
-apt-get update
-apt-get install -y nodejs
+if [ ${WORKER} == 0 ]; then
+    # NodeJS
+    NODE_MAJOR=20
+    sudo rm -f /etc/apt/keyrings/nodesource.gpg
+    curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | sudo gpg --batch --dearmor -o /etc/apt/keyrings/nodesource.gpg
+    chmod o+r /etc/apt/keyrings/nodesource.gpg
+    echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_$NODE_MAJOR.x nodistro main" | sudo tee /etc/apt/sources.list.d/nodesource.list
+    apt-get update
+    apt-get install -y nodejs
+fi
 
 #CMAKE
 echo "installing cmake"
@@ -115,13 +126,14 @@ apt-get install git -y
 # ------------------------------------------------------------------
 
 # Install OpenLDAP for testing on Vagrant
-if [ ${DEV_VM} == 1 ]; then
+if [ "${DEV_VM}" == 1 ]; then
     CUR_DIR="$( cd -P "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
+    # shellcheck disable=SC1091
     source "$CUR_DIR/../../../vagrant/setup_ldap.sh"
 fi
 
 # Install SAML IdP docker container for testing
-if [ ${DEV_VM} == 1 ]; then
+if [ "${DEV_VM}" == 1 ]; then
     docker pull submitty/docker-test-saml-idp:latest
 fi
